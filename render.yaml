@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: learnone-backend
+    runtime: java
+    buildCommand: cd backend && mvn -B package -DskipTests
+    startCommand: java -jar backend/target/learnone-backend-0.1.0-SNAPSHOT.jar
+    envVars:
+      - key: DB_URL
+        sync: false
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRATION_MS
+        value: "86400000"
+      - key: ANTHROPIC_API_KEY
+        sync: false
+    healthCheckPath: /actuator/health

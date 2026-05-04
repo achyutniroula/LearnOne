@@ -1,0 +1,55 @@
+“The Moment I Realized AI Education Is Broken — and What I Wanted Instead”
+During my final semester, I made a deliberate decision:
+I wanted to pivot into backend engineering and actually become employable in the real industry — not just “pass courses.” A friend from the University of Waterloo, who had interned at NVIDIA, told me bluntly:
+
+“If you want to be good, you need to learn the real stuff on your own.”
+
+So I started grinding.
+
+I set up three LLMs side‑by‑side — Copilot 365 as my main tutor, and two additional Copilot chats for follow‑ups and deeper clarifications. I followed a curriculum, asked questions, cross‑checked explanations, and tried to build a coherent understanding of backend engineering.
+
+And honestly?
+It was one of the most cumbersome, fragmented, and mentally draining learning experiences I’ve ever had.
+
+Every concept required:
+
+switching chats
+
+repeating context
+
+re‑explaining what I already knew
+
+manually stitching together explanations
+
+trying to maintain a consistent learning path
+
+It felt like juggling three different teachers who didn’t talk to each other.
+
+That’s when a harsh realization hit me:
+
+Four years of university hadn’t prepared me for industry-level Computer Science.  
+Not because I didn’t learn — but because academic CS is not designed to produce engineers who can ship production systems. It’s designed to follow a curriculum, not to build employability.
+
+So I asked myself:
+
+Why isn’t there one AI that can teach me everything I need — properly, coherently, and continuously?
+Not three chats.
+Not scattered explanations.
+Not a patchwork of prompts.
+
+But one unified, “god‑level” AI educator that:
+
+understands my background
+
+remembers my progress
+
+builds a personalized curriculum
+
+adapts to my questions
+
+teaches visually, interactively, and intelligently
+
+and ultimately makes me a strong, employable CS professional
+
+That frustration — and that vision — became the seed of my dream project:
+a Jarvis‑style AI educator that finally fixes the broken way we learn technical skills today.
