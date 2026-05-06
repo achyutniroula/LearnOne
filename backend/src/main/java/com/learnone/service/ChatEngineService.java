@@ -24,6 +24,8 @@ public class ChatEngineService {
     private final PromptBuilder promptBuilder;
     private final RedisService redisService;
     private final CurriculumRepository curriculumRepo;
+    private final MemoryContextService memoryContextService;
+    private final MemoryExtractionService memoryExtractionService;
 
     public String chat(Long sessionId, Long userId, String userEmail,
                        String userMessage, String imageData, String imageMediaType) {
@@ -39,10 +41,15 @@ public class ChatEngineService {
                 .map(c -> c.getContent())
                 .orElse(null);
 
-        String systemPrompt = promptBuilder.buildSystemPrompt(userEmail, session.getLearningGoal(), curriculumJson);
+        String memoryBlock = memoryContextService.buildBlock(userId);
+        String systemPrompt = promptBuilder.buildSystemPrompt(userEmail, session.getLearningGoal(),
+                curriculumJson, memoryBlock);
+
         String reply = claudeService.sendMessage(claudeHistory, systemPrompt);
 
         sessionService.addMessage(sessionId, ChatMessage.Role.ASSISTANT, reply);
+        memoryExtractionService.extractAsync(userId, sessionId, userMessage, reply);
+
         return reply;
     }
 

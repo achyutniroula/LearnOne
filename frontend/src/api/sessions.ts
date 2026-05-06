@@ -40,8 +40,7 @@ export const sessionsApi = {
     api
       .post<{ role: string; content: string }>(`/api/sessions/${sessionId}/chat`, {
         message,
-        imageData,
-        imageMediaType,
+        ...(imageData ? { imageData, imageMediaType } : {}),
       })
       .then((r) => r.data),
 

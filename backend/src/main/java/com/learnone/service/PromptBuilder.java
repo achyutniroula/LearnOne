@@ -3,6 +3,8 @@ package com.learnone.service;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+
 @Service
 public class PromptBuilder {
 
@@ -10,14 +12,20 @@ public class PromptBuilder {
     private String basePrompt;
 
     public String buildSystemPrompt(String userEmail, String learningGoal, String curriculumJson) {
+        return buildSystemPrompt(userEmail, learningGoal, curriculumJson, "");
+    }
+
+    public String buildSystemPrompt(String userEmail, String learningGoal, String curriculumJson, String memoryBlock) {
         String curriculum = (curriculumJson != null && !curriculumJson.isBlank())
                 ? "\n\nCurrent curriculum:\n" + curriculumJson
                 : "";
+        String memory = (memoryBlock != null && !memoryBlock.isBlank()) ? memoryBlock : "";
 
         return basePrompt
                 .replace("{{user_email}}", userEmail)
                 .replace("{{learning_goal}}", learningGoal)
-                .replace("{{curriculum}}", curriculum);
+                .replace("{{curriculum}}", curriculum)
+                .replace("{{memory}}", memory);
     }
 
     public String buildCurriculumPrompt(String learningGoal) {
@@ -46,5 +54,29 @@ public class PromptBuilder {
                 Conversation:
                 %s
                 """.formatted(conversationText);
+    }
+
+    public String buildExtractionPrompt(String userMessage, String assistantReply, List<String> existingKeys) {
+        String existing = existingKeys.isEmpty() ? "none" : String.join(", ", existingKeys);
+        return """
+                Analyze this learning exchange and extract insights.
+
+                Existing memory keys (update these instead of creating duplicates): %s
+
+                Exchange:
+                User: %s
+                Assistant: %s
+
+                Return ONLY valid JSON (no markdown, no prose):
+                {
+                  "memories": [
+                    {"key": "short-kebab-case-key", "category": "struggle|style|background|misconception|preference", "value": "concise fact about learner", "confidence": 70}
+                  ],
+                  "concepts": [
+                    {"slug": "concept-slug", "label": "Concept Label", "mastery": 65}
+                  ]
+                }
+                Both arrays may be empty if nothing meaningful to extract.
+                """.formatted(existing, userMessage, assistantReply);
     }
 }

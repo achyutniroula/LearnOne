@@ -44,7 +44,7 @@ public class LearningSessionController {
     public List<MessageResponse> messages(@PathVariable Long id,
                                           @AuthenticationPrincipal UserDetails principal) {
         Long userId = resolveUserId(principal);
-        sessionService.getSessionForUser(id, userId); // auth check
+        sessionService.getSessionForUser(id, userId);
         return sessionService.getHistory(id).stream()
                 .map(m -> new MessageResponse(m.getId(), m.getRole().name(), m.getContent(),
                         m.getImageData(), m.getImageMediaType(), m.getCreatedAt()))
