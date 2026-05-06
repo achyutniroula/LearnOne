@@ -12,6 +12,8 @@ export interface Message {
   id: number
   role: 'USER' | 'ASSISTANT'
   content: string
+  imageData?: string
+  imageMediaType?: string
   createdAt: string
 }
 
@@ -34,8 +36,14 @@ export const sessionsApi = {
   messages: (sessionId: number) =>
     api.get<Message[]>(`/api/sessions/${sessionId}/messages`).then((r) => r.data),
 
-  chat: (sessionId: number, message: string) =>
-    api.post<{ role: string; content: string }>(`/api/sessions/${sessionId}/chat`, { message }).then((r) => r.data),
+  chat: (sessionId: number, message: string, imageData?: string, imageMediaType?: string) =>
+    api
+      .post<{ role: string; content: string }>(`/api/sessions/${sessionId}/chat`, {
+        message,
+        imageData,
+        imageMediaType,
+      })
+      .then((r) => r.data),
 
   curriculum: (sessionId: number) =>
     api.get<Curriculum>(`/api/sessions/${sessionId}/curriculum`).then((r) => r.data),

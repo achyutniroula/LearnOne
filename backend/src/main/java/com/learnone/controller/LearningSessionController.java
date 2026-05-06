@@ -46,7 +46,8 @@ public class LearningSessionController {
         Long userId = resolveUserId(principal);
         sessionService.getSessionForUser(id, userId); // auth check
         return sessionService.getHistory(id).stream()
-                .map(m -> new MessageResponse(m.getId(), m.getRole().name(), m.getContent(), m.getCreatedAt()))
+                .map(m -> new MessageResponse(m.getId(), m.getRole().name(), m.getContent(),
+                        m.getImageData(), m.getImageMediaType(), m.getCreatedAt()))
                 .toList();
     }
 

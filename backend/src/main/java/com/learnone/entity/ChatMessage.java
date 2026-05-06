@@ -32,6 +32,12 @@ public class ChatMessage {
     @Column(name = "token_count")
     private int tokenCount;
 
+    @Column(name = "image_data", columnDefinition = "TEXT")
+    private String imageData;
+
+    @Column(name = "image_media_type", length = 50)
+    private String imageMediaType;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt = OffsetDateTime.now();
 }

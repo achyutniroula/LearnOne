@@ -1,12 +1,21 @@
-import { useState, useEffect, useRef, FormEvent } from 'react'
+import { useState, useEffect, useRef, FormEvent, ChangeEvent } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { sessionsApi, Session, Message, Curriculum } from '../api/sessions'
 import { useAuth } from '../contexts/AuthContext'
 
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024
+const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+
+interface PendingImage {
+  data: string
+  mediaType: string
+  preview: string
+}
+
 export default function ChatPage() {
   const { sessionId } = useParams<{ sessionId: string }>()
-  const { user, logout } = useAuth()
+  const { logout } = useAuth()
   const navigate = useNavigate()
 
   const [sessions, setSessions] = useState<Session[]>([])
@@ -18,7 +27,10 @@ export default function ChatPage() {
   const [showNewModal, setShowNewModal] = useState(false)
   const [newGoal, setNewGoal] = useState('')
   const [creatingSession, setCreatingSession] = useState(false)
+  const [pendingImage, setPendingImage] = useState<PendingImage | null>(null)
+  const [imageError, setImageError] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const id = sessionId ? parseInt(sessionId) : null
 
@@ -36,18 +48,58 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
+    setImageError(null)
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      setImageError('Unsupported type. Use JPEG, PNG, GIF, or WebP.')
+      return
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setImageError('Image must be under 3 MB.')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = reader.result as string
+      const base64 = dataUrl.split(',')[1]
+      setPendingImage({ data: base64, mediaType: file.type, preview: dataUrl })
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
+
   async function handleSend(e: FormEvent) {
     e.preventDefault()
     if (!input.trim() || !id || loading) return
     const userMsg = input.trim()
+    const img = pendingImage
     setInput('')
-    setMessages((prev) => [...prev, { id: Date.now(), role: 'USER', content: userMsg, createdAt: new Date().toISOString() }])
+    setPendingImage(null)
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: Date.now(),
+        role: 'USER',
+        content: userMsg,
+        imageData: img?.data,
+        imageMediaType: img?.mediaType,
+        createdAt: new Date().toISOString(),
+      },
+    ])
     setLoading(true)
     try {
-      const reply = await sessionsApi.chat(id, userMsg)
-      setMessages((prev) => [...prev, { id: Date.now() + 1, role: 'ASSISTANT', content: reply.content, createdAt: new Date().toISOString() }])
+      const reply = await sessionsApi.chat(id, userMsg, img?.data, img?.mediaType)
+      setMessages((prev) => [
+        ...prev,
+        { id: Date.now() + 1, role: 'ASSISTANT', content: reply.content, createdAt: new Date().toISOString() },
+      ])
     } catch {
-      setMessages((prev) => [...prev, { id: Date.now() + 1, role: 'ASSISTANT', content: '_Error: could not reach the server. Please try again._', createdAt: new Date().toISOString() }])
+      setMessages((prev) => [
+        ...prev,
+        { id: Date.now() + 1, role: 'ASSISTANT', content: '_Error: could not reach the server. Please try again._', createdAt: new Date().toISOString() },
+      ])
     } finally {
       setLoading(false)
     }
@@ -118,6 +170,13 @@ export default function ChatPage() {
             <div style={s.messages}>
               {messages.map((msg) => (
                 <div key={msg.id} style={msg.role === 'USER' ? s.userBubble : s.aiBubble}>
+                  {msg.imageData && msg.imageMediaType && (
+                    <img
+                      src={`data:${msg.imageMediaType};base64,${msg.imageData}`}
+                      alt="attached"
+                      style={s.msgImage}
+                    />
+                  )}
                   {msg.role === 'ASSISTANT' ? (
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
                   ) : (
@@ -125,15 +184,40 @@ export default function ChatPage() {
                   )}
                 </div>
               ))}
-              {loading && <div style={s.aiBubble}><em style={{ color: '#888' }}>LearOne is thinking…</em></div>}
+              {loading && <div style={s.aiBubble}><em style={{ color: '#888' }}>LearnOne is thinking…</em></div>}
               <div ref={bottomRef} />
             </div>
+
+            {/* Image preview strip */}
+            {pendingImage && (
+              <div style={s.previewStrip}>
+                <img src={pendingImage.preview} alt="preview" style={s.previewImg} />
+                <button style={s.removeImgBtn} onClick={() => setPendingImage(null)}>x</button>
+              </div>
+            )}
+            {imageError && <p style={s.imageError}>{imageError}</p>}
+
             <form onSubmit={handleSend} style={s.inputRow}>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                style={{ display: 'none' }}
+                onChange={handleFileChange}
+              />
+              <button
+                type="button"
+                style={s.attachBtn}
+                onClick={() => { setImageError(null); fileInputRef.current?.click() }}
+                title="Attach image"
+              >
+                [+]
+              </button>
               <input
                 style={s.textInput}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask anything…"
+                placeholder="Ask anything..."
                 disabled={loading}
                 autoFocus
               />
@@ -160,7 +244,7 @@ export default function ChatPage() {
               ))}
             </>
           ) : (
-            <p style={s.emptyText}>Generating curriculum…</p>
+            <p style={s.emptyText}>Generating curriculum...</p>
           )}
         </aside>
       )}
@@ -182,7 +266,7 @@ export default function ChatPage() {
               <div style={s.modalActions}>
                 <button type="button" style={s.cancelBtn} onClick={() => setShowNewModal(false)}>Cancel</button>
                 <button type="submit" style={s.bigBtn} disabled={creatingSession || !newGoal.trim()}>
-                  {creatingSession ? 'Creating…' : 'Start Session'}
+                  {creatingSession ? 'Creating...' : 'Start Session'}
                 </button>
               </div>
             </form>
@@ -210,7 +294,13 @@ const s: Record<string, React.CSSProperties> = {
   messages: { flex: 1, overflowY: 'auto', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' },
   userBubble: { alignSelf: 'flex-end', background: '#4f46e5', color: '#fff', borderRadius: '12px 12px 2px 12px', padding: '0.6rem 1rem', maxWidth: '70%' },
   aiBubble: { alignSelf: 'flex-start', background: '#1a1a2e', borderRadius: '12px 12px 12px 2px', padding: '0.6rem 1rem', maxWidth: '80%', lineHeight: 1.6 },
+  msgImage: { display: 'block', maxWidth: '100%', maxHeight: 300, borderRadius: 8, marginBottom: '0.5rem' },
+  previewStrip: { display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', borderTop: '1px solid #2a2a2a', background: '#111' },
+  previewImg: { height: 60, borderRadius: 6, objectFit: 'cover' },
+  removeImgBtn: { background: 'transparent', border: 'none', color: '#888', cursor: 'pointer', fontSize: '1rem' },
+  imageError: { margin: 0, padding: '0.25rem 1rem', color: '#f87171', fontSize: '0.82rem', background: '#111' },
   inputRow: { display: 'flex', gap: '0.5rem', padding: '0.75rem 1rem', borderTop: '1px solid #2a2a2a' },
+  attachBtn: { padding: '0.65rem 0.75rem', borderRadius: 8, border: '1px solid #333', background: 'transparent', color: '#aaa', cursor: 'pointer', fontSize: '0.85rem', flexShrink: 0 },
   textInput: { flex: 1, padding: '0.65rem 1rem', borderRadius: 8, border: '1px solid #333', background: '#111', color: '#fff', fontSize: '0.95rem' },
   sendBtn: { padding: '0.65rem 1.2rem', borderRadius: 8, border: 'none', background: '#6366f1', color: '#fff', cursor: 'pointer', fontWeight: 600 },
   curriculum: { width: 220, borderLeft: '1px solid #2a2a2a', overflowY: 'auto', padding: '1rem', flexShrink: 0 },

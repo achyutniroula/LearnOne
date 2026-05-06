@@ -25,11 +25,12 @@ public class ChatEngineService {
     private final RedisService redisService;
     private final CurriculumRepository curriculumRepo;
 
-    public String chat(Long sessionId, Long userId, String userEmail, String userMessage) {
+    public String chat(Long sessionId, Long userId, String userEmail,
+                       String userMessage, String imageData, String imageMediaType) {
         enforceRateLimit(userId);
 
         LearningSession session = sessionService.getSessionForUser(sessionId, userId);
-        sessionService.addMessage(sessionId, ChatMessage.Role.USER, userMessage);
+        sessionService.addMessage(sessionId, ChatMessage.Role.USER, userMessage, imageData, imageMediaType);
 
         List<ChatMessage> history = sessionService.getHistory(sessionId);
         List<ClaudeService.Message> claudeHistory = buildClaudeHistory(history, sessionId);
@@ -45,13 +46,16 @@ public class ChatEngineService {
         return reply;
     }
 
+    public String chat(Long sessionId, Long userId, String userEmail, String userMessage) {
+        return chat(sessionId, userId, userEmail, userMessage, null, null);
+    }
+
     private List<ClaudeService.Message> buildClaudeHistory(List<ChatMessage> history, Long sessionId) {
         List<ChatMessage> relevant = history.stream()
                 .filter(m -> m.getRole() != ChatMessage.Role.SYSTEM)
                 .toList();
 
         if (relevant.size() > CONTEXT_MESSAGE_LIMIT) {
-            // Summarize older messages, keep recent ones
             List<ChatMessage> old = relevant.subList(0, relevant.size() - CONTEXT_MESSAGE_LIMIT);
             List<ChatMessage> recent = relevant.subList(relevant.size() - CONTEXT_MESSAGE_LIMIT, relevant.size());
 
@@ -67,13 +71,21 @@ public class ChatEngineService {
             result.add(new ClaudeService.Message("user", "[Earlier conversation summary]\n" + summary));
             result.add(new ClaudeService.Message("assistant", "Understood. I'll continue from where we left off."));
             for (ChatMessage m : recent) {
-                result.add(new ClaudeService.Message(m.getRole().name().toLowerCase(), m.getContent()));
+                result.add(new ClaudeService.Message(
+                        m.getRole().name().toLowerCase(),
+                        m.getContent(),
+                        m.getImageData(),
+                        m.getImageMediaType()));
             }
             return result;
         }
 
         return relevant.stream()
-                .map(m -> new ClaudeService.Message(m.getRole().name().toLowerCase(), m.getContent()))
+                .map(m -> new ClaudeService.Message(
+                        m.getRole().name().toLowerCase(),
+                        m.getContent(),
+                        m.getImageData(),
+                        m.getImageMediaType()))
                 .toList();
     }
 

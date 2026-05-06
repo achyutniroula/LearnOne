@@ -33,7 +33,11 @@ public class ClaudeService {
         this.apiKey = apiKey;
     }
 
-    public record Message(String role, String content) {}
+    public record Message(String role, String content, String imageData, String imageMediaType) {
+        public Message(String role, String content) {
+            this(role, content, null, null);
+        }
+    }
 
     public String sendMessage(List<Message> history, String systemPrompt) {
         HttpHeaders headers = new HttpHeaders();
@@ -50,7 +54,20 @@ public class ClaudeService {
         for (Message m : history) {
             ObjectNode msg = messages.addObject();
             msg.put("role", m.role());
-            msg.put("content", m.content());
+            if (m.imageData() != null && m.imageMediaType() != null) {
+                ArrayNode content = msg.putArray("content");
+                ObjectNode imgBlock = content.addObject();
+                imgBlock.put("type", "image");
+                ObjectNode source = imgBlock.putObject("source");
+                source.put("type", "base64");
+                source.put("media_type", m.imageMediaType());
+                source.put("data", m.imageData());
+                ObjectNode textBlock = content.addObject();
+                textBlock.put("type", "text");
+                textBlock.put("text", m.content());
+            } else {
+                msg.put("content", m.content());
+            }
         }
 
         HttpEntity<String> request;

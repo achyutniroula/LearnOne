@@ -28,7 +28,8 @@ public class ChatController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED))
                 .getId();
 
-        String reply = chatEngine.chat(id, userId, principal.getUsername(), req.message());
+        String reply = chatEngine.chat(id, userId, principal.getUsername(),
+                req.message(), req.imageData(), req.imageMediaType());
         return new ChatResponse("assistant", reply);
     }
 }

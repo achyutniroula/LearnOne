@@ -51,8 +51,8 @@ Frontend runs on `http://localhost:5173`.
 ## Phase status
 
 - [x] Phase 0 — Foundation & Dev Environment
-- [ ] Phase 1 — Core AI Teaching Loop
-- [ ] Phase 2 — Multimodal Learning Engine
+- [x] Phase 1 — Core AI Teaching Loop
+- [x] Phase 2 — Multimodal Learning Engine
 - [ ] Phase 3 — Persistent Memory & Learning Graph
 - [ ] Phase 4 — Polish & Production
 - [ ] Phase 5 — Advanced Features
