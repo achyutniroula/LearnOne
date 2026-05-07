@@ -38,7 +38,7 @@ export const sessionsApi = {
 
   chat: (sessionId: number, message: string, imageData?: string, imageMediaType?: string) =>
     api
-      .post<{ role: string; content: string }>(`/api/sessions/${sessionId}/chat`, {
+      .post<{ role: string; content: string; diagramCode?: string }>(`/api/sessions/${sessionId}/chat`, {
         message,
         ...(imageData ? { imageData, imageMediaType } : {}),
       })

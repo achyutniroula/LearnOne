@@ -8,5 +8,6 @@ import java.util.Optional;
 
 public interface LearningSessionRepository extends JpaRepository<LearningSession, Long> {
     List<LearningSession> findByUserIdOrderByCreatedAtDesc(Long userId);
+    List<LearningSession> findTop2ByUserIdOrderByCreatedAtDesc(Long userId);
     Optional<LearningSession> findByIdAndUserId(Long id, Long userId);
 }

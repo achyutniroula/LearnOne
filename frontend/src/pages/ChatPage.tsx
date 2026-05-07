@@ -2,16 +2,22 @@ import { useState, useEffect, useRef, FormEvent, ChangeEvent } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
 import { Plus, LogOut, MessageSquare, Paperclip, Send, X } from 'lucide-react'
 import clsx from 'clsx'
 import { sessionsApi, Session, Message, Curriculum } from '../api/sessions'
 import { useAuth } from '../contexts/AuthContext'
 import RightPanel from '../components/RightPanel'
+import CodeBlock from '../components/CodeBlock'
+import MermaidBlock from '../components/MermaidBlock'
+import 'katex/dist/katex.min.css'
 
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
 
 interface PendingImage { data: string; mediaType: string; preview: string }
+interface DiagramMap { [msgId: number]: string }
 
 export default function ChatPage() {
   const { sessionId } = useParams<{ sessionId: string }>()
@@ -28,6 +34,7 @@ export default function ChatPage() {
   const [creatingSession, setCreatingSession] = useState(false)
   const [pendingImage, setPendingImage] = useState<PendingImage | null>(null)
   const [imageError, setImageError] = useState<string | null>(null)
+  const [diagrams, setDiagrams] = useState<DiagramMap>({})
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -73,7 +80,9 @@ export default function ChatPage() {
     setLoading(true)
     try {
       const reply = await sessionsApi.chat(id, userMsg, img?.data, img?.mediaType)
-      setMessages((prev) => [...prev, { id: Date.now() + 1, role: 'ASSISTANT', content: reply.content, createdAt: new Date().toISOString() }])
+      const aiId = Date.now() + 1
+      setMessages((prev) => [...prev, { id: aiId, role: 'ASSISTANT', content: reply.content, createdAt: new Date().toISOString() }])
+      if (reply.diagramCode) setDiagrams((prev) => ({ ...prev, [aiId]: reply.diagramCode! }))
       window.dispatchEvent(new Event('chat:turn-complete'))
     } catch {
       setMessages((prev) => [...prev, { id: Date.now() + 1, role: 'ASSISTANT', content: '_Error: could not reach the server._', createdAt: new Date().toISOString() }])
@@ -231,7 +240,23 @@ export default function ChatPage() {
                         />
                       )}
                       {msg.role === 'ASSISTANT' ? (
-                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        <>
+                          <ReactMarkdown
+                            remarkPlugins={[remarkMath]}
+                            rehypePlugins={[rehypeKatex]}
+                            components={{
+                              code({ className, children }) {
+                                const lang = /language-(\w+)/.exec(className || '')?.[1] ?? 'text'
+                                const isBlock = String(children).includes('\n')
+                                if (!isBlock) return <code className={className}>{children}</code>
+                                return <CodeBlock code={String(children).replace(/\n$/, '')} language={lang} />
+                              },
+                            }}
+                          >
+                            {msg.content}
+                          </ReactMarkdown>
+                          {diagrams[msg.id] && <MermaidBlock code={diagrams[msg.id]} />}
+                        </>
                       ) : (
                         <span>{msg.content}</span>
                       )}

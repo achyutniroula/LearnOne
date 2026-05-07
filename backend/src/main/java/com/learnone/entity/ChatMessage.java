@@ -38,6 +38,9 @@ public class ChatMessage {
     @Column(name = "image_media_type", length = 50)
     private String imageMediaType;
 
+    @Column(name = "embedding", columnDefinition = "vector(1024)")
+    private float[] embedding;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt = OffsetDateTime.now();
 }

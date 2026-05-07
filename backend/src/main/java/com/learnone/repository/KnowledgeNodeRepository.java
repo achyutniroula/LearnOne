@@ -8,6 +8,7 @@ import java.util.Optional;
 
 public interface KnowledgeNodeRepository extends JpaRepository<KnowledgeNode, Long> {
     List<KnowledgeNode> findTop15ByUserIdOrderByMasteryDesc(Long userId);
+    List<KnowledgeNode> findTop15ByUserIdOrderByExposuresDescMasteryDesc(Long userId);
     List<KnowledgeNode> findByUserIdOrderByMasteryDesc(Long userId);
     Optional<KnowledgeNode> findByUserIdAndConceptSlug(Long userId, String conceptSlug);
 }

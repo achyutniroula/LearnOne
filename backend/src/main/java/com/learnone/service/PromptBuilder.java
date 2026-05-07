@@ -16,16 +16,22 @@ public class PromptBuilder {
     }
 
     public String buildSystemPrompt(String userEmail, String learningGoal, String curriculumJson, String memoryBlock) {
+        return buildSystemPrompt(userEmail, learningGoal, curriculumJson, memoryBlock, "");
+    }
+
+    public String buildSystemPrompt(String userEmail, String learningGoal, String curriculumJson,
+                                    String memoryBlock, String lastSessionContext) {
         String curriculum = (curriculumJson != null && !curriculumJson.isBlank())
                 ? "\n\nCurrent curriculum:\n" + curriculumJson
                 : "";
         String memory = (memoryBlock != null && !memoryBlock.isBlank()) ? memoryBlock : "";
+        String last = (lastSessionContext != null && !lastSessionContext.isBlank()) ? lastSessionContext : "";
 
         return basePrompt
                 .replace("{{user_email}}", userEmail)
                 .replace("{{learning_goal}}", learningGoal)
                 .replace("{{curriculum}}", curriculum)
-                .replace("{{memory}}", memory);
+                .replace("{{memory}}", memory + last);
     }
 
     public String buildCurriculumPrompt(String learningGoal) {

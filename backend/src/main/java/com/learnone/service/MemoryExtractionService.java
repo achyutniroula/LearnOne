@@ -2,8 +2,10 @@ package com.learnone.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.learnone.entity.ChatMessage;
 import com.learnone.entity.KnowledgeNode;
 import com.learnone.entity.UserMemory;
+import com.learnone.repository.ChatMessageRepository;
 import com.learnone.repository.KnowledgeNodeRepository;
 import com.learnone.repository.UserMemoryRepository;
 import lombok.RequiredArgsConstructor;
@@ -25,8 +27,11 @@ public class MemoryExtractionService {
     private final ClaudeService claudeService;
     private final UserMemoryRepository memoryRepo;
     private final KnowledgeNodeRepository nodeRepo;
+    private final ChatMessageRepository chatMessageRepo;
     private final PromptBuilder promptBuilder;
     private final ObjectMapper objectMapper;
+    private final EmbeddingService embeddingService;
+    private final SpacedRepetitionService spacedRepService;
 
     @Async("extractionExecutor")
     public void extractAsync(Long userId, Long sessionId, String userMessage, String assistantReply) {
@@ -48,8 +53,24 @@ public class MemoryExtractionService {
 
             persistMemories(userId, sessionId, root.path("memories"));
             persistConcepts(userId, sessionId, root.path("concepts"));
+            embedLastMessages(sessionId, userMessage, assistantReply);
         } catch (Exception e) {
             log.warn("Memory extraction failed for userId={}: {}", userId, e.getMessage());
+        }
+    }
+
+    private void embedLastMessages(Long sessionId, String userMessage, String assistantReply) {
+        try {
+            String combined = "User: " + userMessage + "\nAssistant: " + assistantReply;
+            float[] embedding = embeddingService.embed(combined);
+            if (embedding == null) return;
+            chatMessageRepo.findTopBySessionIdAndRoleOrderByCreatedAtDesc(sessionId, ChatMessage.Role.ASSISTANT)
+                    .ifPresent(msg -> {
+                        msg.setEmbedding(embedding);
+                        chatMessageRepo.save(msg);
+                    });
+        } catch (Exception e) {
+            log.debug("Embedding step skipped: {}", e.getMessage());
         }
     }
 
@@ -131,6 +152,7 @@ public class MemoryExtractionService {
                 node.setLastSessionId(sessionId);
                 node.setUpdatedAt(OffsetDateTime.now());
                 nodeRepo.save(node);
+                spacedRepService.initIfAbsent(userId, slug, label);
             } catch (Exception e) {
                 log.warn("Failed to persist concept entry: {}", e.getMessage());
             }

@@ -2,8 +2,11 @@ import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Curriculum } from '../api/sessions'
 import { memoryApi, UserMemory, KnowledgeNode } from '../api/memory'
+import QuizPanel from './QuizPanel'
+import ReviewPanel from './ReviewPanel'
+import ProgressPanel from './ProgressPanel'
 
-type Tab = 'curriculum' | 'memory' | 'graph'
+type Tab = 'curriculum' | 'memory' | 'graph' | 'quiz' | 'progress' | 'review'
 
 const CATEGORY_COLOR: Record<string, string> = {
   struggle: '#ee7d77',
@@ -32,10 +35,7 @@ export default function RightPanel({ curriculum, sessionId }: Props) {
     memoryApi.knowledgeGraph().then(setNodes).catch(() => {})
   }, [])
 
-  useEffect(() => {
-    fetchMemory()
-    fetchGraph()
-  }, [fetchMemory, fetchGraph])
+  useEffect(() => { fetchMemory(); fetchGraph() }, [fetchMemory, fetchGraph])
 
   useEffect(() => {
     const handler = () => setTimeout(() => { fetchMemory(); fetchGraph() }, 2000)
@@ -47,25 +47,28 @@ export default function RightPanel({ curriculum, sessionId }: Props) {
     { id: 'curriculum', label: 'Plan' },
     { id: 'memory', label: 'Memory' },
     { id: 'graph', label: 'Graph' },
+    { id: 'quiz', label: 'Quiz' },
+    { id: 'progress', label: 'Progress' },
+    { id: 'review', label: 'Review' },
   ]
 
   return (
     <aside
       className="flex flex-col border-l flex-shrink-0"
       style={{
-        width: 220,
+        width: 240,
         borderColor: 'rgba(255,255,255,0.05)',
         background: 'rgba(17,19,23,0.9)',
         backdropFilter: 'blur(12px)',
       }}
     >
-      {/* Tabs */}
-      <div className="flex border-b" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
+      {/* Tabs — two rows of 3 */}
+      <div className="grid grid-cols-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
         {tabs.map(({ id, label }) => (
           <button
             key={id}
             onClick={() => setTab(id)}
-            className="flex-1 py-3 text-xs tracking-widest uppercase transition-all"
+            className="py-2.5 text-[10px] tracking-widest uppercase transition-all"
             style={{
               color: tab === id ? 'var(--on-surface)' : 'var(--outline)',
               borderBottom: tab === id ? '1px solid rgba(198,198,199,0.4)' : '1px solid transparent',
@@ -118,14 +121,11 @@ export default function RightPanel({ curriculum, sessionId }: Props) {
                   {memories.map((m) => (
                     <div key={m.id} className="glass-card p-3">
                       <div className="flex items-center justify-between mb-1.5">
-                        <span
-                          className="badge"
-                          style={{
-                            background: `${CATEGORY_COLOR[m.category] ?? '#767578'}18`,
-                            color: CATEGORY_COLOR[m.category] ?? '#767578',
-                            borderColor: `${CATEGORY_COLOR[m.category] ?? '#767578'}30`,
-                          }}
-                        >
+                        <span className="badge" style={{
+                          background: `${CATEGORY_COLOR[m.category] ?? '#767578'}18`,
+                          color: CATEGORY_COLOR[m.category] ?? '#767578',
+                          borderColor: `${CATEGORY_COLOR[m.category] ?? '#767578'}30`,
+                        }}>
                           {m.category}
                         </span>
                         <span className="text-[10px]" style={{ color: 'var(--outline)' }}>{m.confidence}%</span>
@@ -139,7 +139,7 @@ export default function RightPanel({ curriculum, sessionId }: Props) {
 
             {tab === 'graph' && (
               nodes.length === 0 ? (
-                <p className="text-xs" style={{ color: 'var(--outline)' }}>No concepts tracked yet. Start a session to build your graph.</p>
+                <p className="text-xs" style={{ color: 'var(--outline)' }}>No concepts tracked yet.</p>
               ) : (
                 <div className="flex flex-col gap-3">
                   {nodes.map((n) => (
@@ -165,6 +165,10 @@ export default function RightPanel({ curriculum, sessionId }: Props) {
                 </div>
               )
             )}
+
+            {tab === 'quiz' && <QuizPanel sessionId={sessionId} />}
+            {tab === 'progress' && <ProgressPanel />}
+            {tab === 'review' && <ReviewPanel />}
           </motion.div>
         </AnimatePresence>
       </div>
