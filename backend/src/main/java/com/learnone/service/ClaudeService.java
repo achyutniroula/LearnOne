@@ -1,37 +1,18 @@
 package com.learnone.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.*;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
+import java.io.*;
+import java.nio.file.*;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @Slf4j
 public class ClaudeService {
 
-    private static final String API_URL = "https://api.anthropic.com/v1/messages";
-    private static final String MODEL = "claude-opus-4-7";
-    private static final int MAX_TOKENS = 4096;
-    private static final int MAX_RETRIES = 3;
-
-    private final RestTemplate restTemplate;
-    private final ObjectMapper objectMapper;
-    private final String apiKey;
-
-    public ClaudeService(RestTemplate restTemplate,
-                         ObjectMapper objectMapper,
-                         @Value("${anthropic.api.key}") String apiKey) {
-        this.restTemplate = restTemplate;
-        this.objectMapper = objectMapper;
-        this.apiKey = apiKey;
-    }
+    private static final int TIMEOUT_SECONDS = 300;
 
     public record Message(String role, String content, String imageData, String imageMediaType) {
         public Message(String role, String content) {
@@ -40,58 +21,67 @@ public class ClaudeService {
     }
 
     public String sendMessage(List<Message> history, String systemPrompt) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.set("x-api-key", apiKey);
-        headers.set("anthropic-version", "2023-06-01");
-
-        ObjectNode body = objectMapper.createObjectNode();
-        body.put("model", MODEL);
-        body.put("max_tokens", MAX_TOKENS);
-        body.put("system", systemPrompt);
-
-        ArrayNode messages = body.putArray("messages");
-        for (Message m : history) {
-            ObjectNode msg = messages.addObject();
-            msg.put("role", m.role());
-            if (m.imageData() != null && m.imageMediaType() != null) {
-                ArrayNode content = msg.putArray("content");
-                ObjectNode imgBlock = content.addObject();
-                imgBlock.put("type", "image");
-                ObjectNode source = imgBlock.putObject("source");
-                source.put("type", "base64");
-                source.put("media_type", m.imageMediaType());
-                source.put("data", m.imageData());
-                ObjectNode textBlock = content.addObject();
-                textBlock.put("type", "text");
-                textBlock.put("text", m.content());
-            } else {
-                msg.put("content", m.content());
-            }
-        }
-
-        HttpEntity<String> request;
-        try {
-            request = new HttpEntity<>(objectMapper.writeValueAsString(body), headers);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to serialize Claude request", e);
-        }
-
-        for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-            try {
-                ResponseEntity<String> response = restTemplate.postForEntity(API_URL, request, String.class);
-                JsonNode root = objectMapper.readTree(response.getBody());
-                return root.path("content").get(0).path("text").asText();
-            } catch (Exception e) {
-                log.warn("Claude API attempt {}/{} failed: {}", attempt, MAX_RETRIES, e.getMessage());
-                if (attempt == MAX_RETRIES) throw new RuntimeException("Claude API unavailable after retries", e);
-                sleep(1000L * attempt);
-            }
-        }
-        throw new IllegalStateException("unreachable");
+        return runClaude(buildPrompt(history, systemPrompt));
     }
 
-    private void sleep(long ms) {
-        try { Thread.sleep(ms); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+    private String buildPrompt(List<Message> history, String systemPrompt) {
+        StringBuilder sb = new StringBuilder();
+        if (systemPrompt != null && !systemPrompt.isBlank()) {
+            sb.append("<system>\n").append(systemPrompt).append("\n</system>\n\n");
+        }
+        for (Message m : history) {
+            sb.append(m.role().toUpperCase()).append(": ").append(m.content()).append("\n\n");
+        }
+        return sb.toString().trim();
+    }
+
+    private String runClaude(String prompt) {
+        String claudePath = findClaudeCli();
+        log.debug("Invoking Claude CLI: {}", claudePath);
+        try {
+            ProcessBuilder pb = new ProcessBuilder(claudePath, "-p", prompt);
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+
+            StringBuilder output = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    output.append(line).append("\n");
+                }
+            }
+
+            boolean finished = process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                throw new RuntimeException("Claude CLI timed out after " + TIMEOUT_SECONDS + "s");
+            }
+
+            String result = output.toString().trim();
+            if (process.exitValue() != 0 || result.isEmpty()) {
+                throw new RuntimeException("Claude CLI failed (exit " + process.exitValue() + "): " + result);
+            }
+            return result;
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            throw new RuntimeException("Failed to invoke Claude CLI", e);
+        }
+    }
+
+    private String findClaudeCli() {
+        String appData = System.getenv("APPDATA");
+        if (appData != null) {
+            String[] candidates = {
+                appData + "\\npm\\claude.cmd",
+                appData + "\\npm\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe",
+            };
+            for (String candidate : candidates) {
+                if (Files.exists(Path.of(candidate))) {
+                    return candidate;
+                }
+            }
+        }
+        return System.getProperty("os.name", "").toLowerCase().contains("win") ? "claude.cmd" : "claude";
     }
 }
