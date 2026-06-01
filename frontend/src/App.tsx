@@ -5,6 +5,7 @@ import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import DashboardPage from './pages/DashboardPage'
 import ChatPage from './pages/ChatPage'
+import TalkPage from './pages/TalkPage'
 
 export default function App() {
   return (
@@ -34,6 +35,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <ChatPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/talk"
+            element={
+              <ProtectedRoute>
+                <TalkPage />
               </ProtectedRoute>
             }
           />

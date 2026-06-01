@@ -7,8 +7,12 @@ class Settings(BaseSettings):
     redis_url: str
     jwt_secret: str
     jwt_expiration_ms: int = 86400000
+    groq_api_key: str = ""
     cohere_api_key: str = ""
     judge0_rapidapi_key: str = ""
+    voice_provider: str = "webspeech"           # "webspeech" or "elevenlabs"
+    elevenlabs_api_key: str = ""
+    elevenlabs_default_voice_id: str = "EXAVITQu4vr4xnSDxMaL"  # Rachel
 
     @property
     def database_url(self) -> str:

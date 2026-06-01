@@ -1,38 +1,40 @@
-import os
-import shutil
-import subprocess
-from pathlib import Path
+from groq import Groq
+from .config import settings
+
+_client: Groq | None = None
+
+MODEL = "llama-3.3-70b-versatile"
 
 
-def _find_claude() -> str:
-    appdata = os.environ.get("APPDATA", "")
-    candidates = [
-        os.path.join(appdata, "npm", "claude.cmd"),
-        os.path.join(appdata, "npm", "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"),
-    ]
-    for c in candidates:
-        if Path(c).exists():
-            return c
-    return shutil.which("claude") or shutil.which("claude.cmd") or "claude"
+def _get_client() -> Groq:
+    global _client
+    if _client is None:
+        _client = Groq(api_key=settings.groq_api_key)
+    return _client
 
 
-def run_claude(prompt: str, timeout: int = 300) -> str:
-    exe = _find_claude()
-    result = subprocess.run(
-        [exe, "-p", prompt],
-        capture_output=True, text=True, timeout=timeout,
-        encoding="utf-8", errors="replace",
+def run_claude(prompt: str, **_) -> str:
+    """Single-turn completion — used for curriculum, quiz, summary, diagram generation."""
+    resp = _get_client().chat.completions.create(
+        model=MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=2048,
+        temperature=0.7,
     )
-    output = result.stdout.strip()
-    if not output:
-        raise RuntimeError(f"Claude returned no output. stderr: {result.stderr[:300]}")
-    return output
+    return resp.choices[0].message.content or ""
+
+
+def chat_with_history(messages: list[dict], system: str) -> str:
+    """Multi-turn chat — messages are already [{"role": "user"|"assistant", "content": "..."}]."""
+    resp = _get_client().chat.completions.create(
+        model=MODEL,
+        messages=[{"role": "system", "content": system}] + messages,
+        max_tokens=2048,
+        temperature=0.7,
+    )
+    return resp.choices[0].message.content or ""
 
 
 def build_messages_prompt(history: list[dict], system_prompt: str) -> str:
-    parts = []
-    if system_prompt:
-        parts.append(f"<system>\n{system_prompt}\n</system>\n")
-    for m in history:
-        parts.append(f"{m['role'].upper()}: {m['content']}\n")
-    return "\n".join(parts).strip()
+    """Kept for backward compatibility — not used for chat anymore."""
+    return system_prompt

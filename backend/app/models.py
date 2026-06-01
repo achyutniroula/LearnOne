@@ -48,7 +48,7 @@ class Curriculum(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     session_id = Column(BigInteger, ForeignKey("learning_sessions.id", ondelete="CASCADE"), nullable=False, unique=True)
     content = Column(Text)
-    created_at = Column(DateTime(timezone=True), default=now_utc, nullable=False)
+    generated_at = Column(DateTime(timezone=True), default=now_utc, nullable=False)
     session = relationship("LearningSession", back_populates="curriculum")
 
 

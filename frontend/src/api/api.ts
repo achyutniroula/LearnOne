@@ -7,9 +7,8 @@ const api = axios.create({
 // Attach JWT from in-memory store on every request
 let _token: string | null = null
 
-export function setToken(token: string | null) {
-  _token = token
-}
+export function setToken(token: string | null) { _token = token }
+export function getToken(): string | null { return _token }
 
 api.interceptors.request.use((config) => {
   if (_token) {

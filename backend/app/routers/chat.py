@@ -7,7 +7,7 @@ from ..database import get_db, SessionLocal
 from ..models import User, LearningSession, ChatMessage, Curriculum, UserMemory, KnowledgeNode, ConceptReview
 from ..auth import get_current_user
 from ..schemas import ChatRequest, ChatResponse
-from ..claude import run_claude, build_messages_prompt
+from ..claude import run_claude, chat_with_history, build_messages_prompt
 from ..redis_client import rate_limit_check
 from ..prompts import build_system_prompt, build_summary_prompt, build_extraction_prompt
 
@@ -49,8 +49,7 @@ def chat(session_id: int, req: ChatRequest, db: Session = Depends(get_db),
     system_prompt = build_system_prompt(current_user.email, session.learning_goal,
                                         curriculum_json, memory_block, last_ctx)
 
-    full_prompt = build_messages_prompt(claude_history, system_prompt)
-    reply = run_claude(full_prompt)
+    reply = chat_with_history(claude_history, system_prompt)
 
     assistant_msg = ChatMessage(session_id=session_id, role="ASSISTANT", content=reply)
     db.add(assistant_msg)

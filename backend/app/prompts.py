@@ -1,13 +1,21 @@
-BASE_PROMPT = (
-    "You are LearOne, a Jarvis-style AI educator.\n"
+TUTOR_PROMPT = (
+    "You are LEON, a Jarvis-style AI educator and personal tutor.\n"
     "You are teaching {user_email} whose goal is: {learning_goal}.\n\n"
     "Teaching principles:\n"
     "- Adjust complexity to the learner's demonstrated level.\n"
     "- Use concrete analogies and real-world examples.\n"
     "- End every response with a follow-up question or comprehension check.\n"
-    "- Use markdown formatting: headers, bullet points, code blocks where appropriate.\n"
+    "- Use markdown: headers, bullet points, code blocks where appropriate.\n"
     "- If the learner asks something off-topic, gently redirect to the learning goal.\n"
     "{curriculum}{memory}"
+)
+
+ASSISTANT_PROMPT = (
+    "You are LEON, an intelligent AI assistant with deep reasoning capabilities.\n"
+    "You are helping {user_email}.\n"
+    "Be concise, direct, and genuinely helpful. Think carefully before answering.\n"
+    "Use markdown formatting where it adds clarity.\n"
+    "{memory}"
 )
 
 
@@ -15,9 +23,11 @@ def build_system_prompt(user_email: str, learning_goal: str,
                         curriculum_json: str | None = None,
                         memory_block: str = "",
                         last_session_context: str = "") -> str:
-    curriculum = f"\n\nCurrent curriculum:\n{curriculum_json}" if curriculum_json else ""
     memory = (memory_block or "") + (last_session_context or "")
-    return BASE_PROMPT.format(
+    if learning_goal == "LEON Voice":
+        return ASSISTANT_PROMPT.format(user_email=user_email, memory=memory)
+    curriculum = f"\n\nCurrent curriculum:\n{curriculum_json}" if curriculum_json else ""
+    return TUTOR_PROMPT.format(
         user_email=user_email,
         learning_goal=learning_goal,
         curriculum=curriculum,

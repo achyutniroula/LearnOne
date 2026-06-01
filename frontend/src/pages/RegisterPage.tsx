@@ -23,8 +23,8 @@ export default function RegisterPage() {
       await register(email, password)
       navigate('/chat')
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      setError(msg ?? 'Registration failed. Email may already be in use.')
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(detail ?? 'Registration failed. Please try again.')
     } finally {
       setLoading(false)
     }
