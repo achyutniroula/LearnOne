@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
-import { ArrowLeft, Mic, MicOff, Square, VolumeX } from 'lucide-react'
+import { ArrowLeft, Mic, MicOff, Square, VolumeX, Github, X, Loader2 } from 'lucide-react'
 import clsx from 'clsx'
 import api from '../api/api'
 import { useVoice } from '../hooks/useVoice'
@@ -10,6 +10,7 @@ import { useLeonState } from '../hooks/useLeonState'
 import LeonOrb from '../components/leon/LeonOrb'
 
 interface Msg { id: number; role: 'user' | 'assistant'; content: string }
+interface RepoMeta { name: string; full_name: string; description: string; stars: number; language: string; url: string; file_count: number; truncated: boolean }
 
 let _id = 0
 const nextId = () => ++_id
@@ -21,6 +22,10 @@ export default function TalkPage() {
   const [loading, setLoading] = useState(false)
   const [conversing, setConversing] = useState(false)
   const [muted, setMuted] = useState(false)
+  const [repoUrl, setRepoUrl] = useState('')
+  const [repoMeta, setRepoMeta] = useState<RepoMeta | null>(null)
+  const [repoLoading, setRepoLoading] = useState(false)
+  const [repoError, setRepoError] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const conversingRef = useRef(false)
 
@@ -44,6 +49,25 @@ export default function TalkPage() {
       setMuted(true)
       voice.stopListening()
     }
+  }
+
+  async function loadRepo() {
+    if (!repoUrl.trim()) return
+    setRepoLoading(true); setRepoError(null)
+    try {
+      const { data } = await api.post<RepoMeta>('/api/leon/load-repo', { url: repoUrl.trim() })
+      setRepoMeta(data)
+      setRepoUrl('')
+      setMessages([])
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setRepoError(detail ?? 'Failed to load repository')
+    } finally { setRepoLoading(false) }
+  }
+
+  async function clearRepo() {
+    try { await api.delete('/api/leon/repo') } catch { /* ignore */ }
+    setRepoMeta(null); setMessages([])
   }
 
   const send = useCallback(async (text: string) => {
@@ -104,11 +128,54 @@ export default function TalkPage() {
 
         {/* LEFT — chat messages */}
         <div className="flex flex-col flex-1 min-w-0 border-r" style={{ borderColor: 'rgba(72,72,75,0.15)' }}>
-          <div className="flex-1 overflow-y-auto no-scrollbar px-6 pt-6 pb-4 flex flex-col gap-3">
+          {/* ── Repo loader ────────────────────────────────────────── */}
+          <div className="px-6 pt-4 pb-2 flex-shrink-0 border-b" style={{ borderColor: 'rgba(72,72,75,0.15)' }}>
+            <AnimatePresence mode="wait">
+              {repoMeta ? (
+                <motion.div key="loaded" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                  className="flex items-center gap-3 px-3 py-2 rounded-lg"
+                  style={{ background: 'rgba(100,200,255,0.06)', border: '1px solid rgba(100,200,255,0.18)' }}>
+                  <Github className="w-4 h-4 flex-shrink-0" style={{ color: 'rgba(100,200,255,0.8)' }} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium truncate" style={{ color: 'var(--on-surface)' }}>{repoMeta.full_name}</p>
+                    <p className="text-[10px] truncate" style={{ color: 'var(--outline)' }}>
+                      {repoMeta.language && `${repoMeta.language} · `}{repoMeta.file_count} files read{repoMeta.truncated ? ' (partial)' : ''}
+                    </p>
+                  </div>
+                  <button onClick={clearRepo} className="btn-ghost p-1 flex-shrink-0"><X className="w-3.5 h-3.5" /></button>
+                </motion.div>
+              ) : (
+                <motion.form key="input" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                  onSubmit={e => { e.preventDefault(); loadRepo() }} className="flex flex-col gap-1.5">
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Github className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none" style={{ color: 'var(--outline)' }} />
+                      <input
+                        className="input-base text-sm pl-8"
+                        placeholder="github.com/owner/repo"
+                        value={repoUrl}
+                        onChange={e => { setRepoUrl(e.target.value); setRepoError(null) }}
+                        disabled={repoLoading}
+                      />
+                    </div>
+                    <button type="submit" disabled={repoLoading || !repoUrl.trim()} className="btn-primary px-4 py-2 flex-shrink-0 text-xs flex items-center gap-1.5">
+                      {repoLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Load'}
+                    </button>
+                  </div>
+                  {repoError && <p className="text-[11px] px-1" style={{ color: 'var(--error)' }}>{repoError}</p>}
+                </motion.form>
+              )}
+            </AnimatePresence>
+          </div>
+
+          <div className="flex-1 overflow-y-auto no-scrollbar px-6 pt-4 pb-4 flex flex-col gap-3">
             {messages.length === 0 && (
               <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                 className="text-sm mt-6" style={{ color: 'var(--outline)' }}>
-                Say anything — this is just between you and LEON.
+                {repoMeta
+                  ? `Ask me anything about ${repoMeta.full_name} — I've read the code.`
+                  : 'Say anything — or load a GitHub repo above to discuss its codebase.'
+                }
               </motion.p>
             )}
             <AnimatePresence initial={false}>

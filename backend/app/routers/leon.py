@@ -2,10 +2,15 @@ from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from ..auth import get_current_user
 from ..models import User
-from ..claude import chat_with_history, _get_client
+from ..claude import chat_with_history, _get_client, MODEL_FAST
+from ..github_fetcher import fetch_repo_context, get_relevant_sections
 
 router = APIRouter(prefix="/api/leon", tags=["leon"])
 
+# ── Per-user repo context store (in-memory) ───────────────────────────────────
+_repo_store: dict[int, str] = {}   # user_id → assembled context string
+
+# ── Base system prompt ────────────────────────────────────────────────────────
 SYSTEM = """You are LEON — a Jarvis-style AI voice assistant and the centrepiece of a software portfolio project built by Achyut Niroula.
 
 ## Who you are
@@ -32,55 +37,77 @@ The goal is simple: make a recruiter stop scrolling. Most junior candidates subm
 - **Auth:** JWT (python-jose) + bcrypt
 - **Migrations:** Flyway (V1–V8 applied)
 
-## Learning features (the LearnOne core)
-The sessions area (/chat) lets users:
-1. Create a learning session with any goal (e.g. "learn neural networks from scratch")
-2. Get an AI-generated curriculum
-3. Chat with LEON as a Socratic tutor
-4. Take quizzes generated from the curriculum
-5. Review concepts via SM-2 spaced repetition scheduling
-6. Track mastery — LEON extracts concepts and scores from every conversation
-
-## What you (LEON voice) are
-This /talk interface is LEON in pure assistant mode — no curriculum, no sessions. It's designed for testing LEON's voice personality, demonstrating barge-in interruption, VAD sensitivity, and real-time AI response quality. It's also the interface a recruiter or demo viewer would interact with first.
-
-## Roadmap ahead
-A 10-week production roadmap is active:
-- Observability (structlog, Prometheus, OpenTelemetry, Grafana public dashboard)
-- PostgreSQL depth (window functions, CTEs, partial indexes)
-- Redis cache-aside + sorted sets
-- Docker + GKE (Kubernetes) deployment
-- GitHub Actions CI/CD
-- Redux Toolkit + RTK Query frontend upgrade
-- RxJS reactive filter streams
-- Multi-tenancy with PostgreSQL Row-Level Security
-- WebSocket real-time chat
-- Cloud Pub/Sub + BigQuery analytics
-
-The target resume line: live URL + public Grafana dashboard + GKE + GitHub Actions + PostgreSQL RLS + Redis cache-aside + BigQuery + WebSockets.
-
 ## How to behave
-- Answer questions about the project knowledgeably and with pride — this is well-built work
-- If asked what you think of the project, be honest and constructive
+- Answer questions about any loaded repository knowledgeably and in detail
 - Keep voice responses conversational and brief (2-4 sentences) unless asked to elaborate
-- You can discuss the technical decisions, trade-offs, and reasoning behind any choice
+- You can discuss technical decisions, trade-offs, and reasoning behind any choice
 """
 
+
+# ── Models ────────────────────────────────────────────────────────────────────
 
 class LeonMessage(BaseModel):
     message: str
     history: list[dict] = []
 
-
 class LeonReply(BaseModel):
     content: str
 
+class LoadRepoRequest(BaseModel):
+    url: str
+
+class LoadRepoResponse(BaseModel):
+    name: str
+    full_name: str
+    description: str
+    stars: int
+    language: str
+    url: str
+    file_count: int
+    truncated: bool
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.post("/chat", response_model=LeonReply)
 def leon_chat(req: LeonMessage, current_user: User = Depends(get_current_user)):
+    system = SYSTEM
+    repo_ctx = _repo_store.get(current_user.id)
+    if repo_ctx:
+        # Extract only the files most relevant to this specific question.
+        # This keeps the request within Groq's free-tier token budget (~6K TPM).
+        relevant = get_relevant_sections(repo_ctx, req.message)
+        system += f"\n\n---\n\n## Loaded Repository — answer based on the codebase below\n\n{relevant}"
     messages = req.history + [{"role": "user", "content": req.message}]
-    content = chat_with_history(messages, SYSTEM)
+    content = chat_with_history(messages, system)
     return LeonReply(content=content)
+
+
+@router.post("/load-repo", response_model=LoadRepoResponse)
+async def load_repo(req: LoadRepoRequest, current_user: User = Depends(get_current_user)):
+    try:
+        result = await fetch_repo_context(req.url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch repository: {e}")
+    _repo_store[current_user.id] = result['context']
+    return LoadRepoResponse(
+        name=result['name'],
+        full_name=result['full_name'],
+        description=result['description'],
+        stars=result['stars'],
+        language=result['language'],
+        url=result['url'],
+        file_count=result['file_count'],
+        truncated=result['truncated'],
+    )
+
+
+@router.delete("/repo")
+def clear_repo(current_user: User = Depends(get_current_user)):
+    _repo_store.pop(current_user.id, None)
+    return {"cleared": True}
 
 
 @router.post("/transcribe")

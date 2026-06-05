@@ -3,7 +3,8 @@ from .config import settings
 
 _client: Groq | None = None
 
-MODEL = "llama-3.3-70b-versatile"
+MODEL      = "llama-3.3-70b-versatile"   # high quality, 100K TPD free tier
+MODEL_FAST = "llama-3.1-8b-instant"      # large context, ~500K TPD free tier
 
 
 def _get_client() -> Groq:
@@ -24,10 +25,10 @@ def run_claude(prompt: str, **_) -> str:
     return resp.choices[0].message.content or ""
 
 
-def chat_with_history(messages: list[dict], system: str) -> str:
+def chat_with_history(messages: list[dict], system: str, model: str | None = None) -> str:
     """Multi-turn chat — messages are already [{"role": "user"|"assistant", "content": "..."}]."""
     resp = _get_client().chat.completions.create(
-        model=MODEL,
+        model=model or MODEL,
         messages=[{"role": "system", "content": system}] + messages,
         max_tokens=2048,
         temperature=0.7,
