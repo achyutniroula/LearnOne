@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
-from sqlalchemy import BigInteger, Boolean, Column, Double, ForeignKey, Integer, SmallInteger, String, Text, DateTime, JSON
+from sqlalchemy import BigInteger, Boolean, Column, Double, ForeignKey, Integer, SmallInteger, String, Text, DateTime, JSON, func
 from sqlalchemy.orm import relationship
+from pgvector.sqlalchemy import Vector
 from .database import Base
 
 
@@ -111,3 +112,14 @@ class ConceptReview(Base):
     next_review_at = Column(DateTime(timezone=True), default=now_utc, nullable=False)
     last_reviewed_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), default=now_utc, nullable=False)
+
+
+class RepoChunk(Base):
+    __tablename__ = "repo_chunks"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    file_path = Column(String, nullable=False)
+    chunk_index = Column(Integer, nullable=False)
+    content = Column(Text, nullable=False)
+    embedding = Column(Vector(768))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -1,8 +1,9 @@
+import logging
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from ..auth import get_current_user
 from ..models import User
-from ..claude import chat_with_history, _get_client, MODEL_FAST
+from ..claude import chat_with_history, transcribe_audio
 from ..github_fetcher import fetch_repo_context, get_relevant_sections
 
 router = APIRouter(prefix="/api/leon", tags=["leon"])
@@ -23,7 +24,7 @@ The project started as "LearnOne" — a structured learning app — and evolved 
 
 ## Why it was built
 The goal is simple: make a recruiter stop scrolling. Most junior candidates submit basic CRUD apps. LEON is designed to be undeniably production-quality, demonstrating:
-- Real AI integration (Groq llama-3.3-70b for reasoning, Whisper for speech recognition)
+- Real AI integration (Google Gemini 2.5 Flash for reasoning and speech recognition)
 - Production backend (Python FastAPI, PostgreSQL with Flyway migrations, Redis caching)
 - Modern frontend (React 18 + TypeScript + Framer Motion voice interface)
 - Voice-first UX with barge-in, VAD (Voice Activity Detection), and TTS
@@ -31,9 +32,9 @@ The goal is simple: make a recruiter stop scrolling. Most junior candidates subm
 
 ## Technical stack
 - **Backend:** Python 3.14 + FastAPI + SQLAlchemy + PostgreSQL (Supabase) + Redis (Upstash)
-- **AI:** Groq API — llama-3.3-70b-versatile for chat/reasoning, whisper-large-v3-turbo for STT
+- **AI:** Google Gemini API — gemini-2.5-flash for chat/reasoning and STT
 - **Frontend:** React 18 + TypeScript + Vite + Framer Motion + Tailwind CSS
-- **Voice:** Browser MediaRecorder → Groq Whisper (transcription) + Web SpeechSynthesis (TTS)
+- **Voice:** Browser MediaRecorder → Gemini (transcription) + Web SpeechSynthesis (TTS)
 - **Auth:** JWT (python-jose) + bcrypt
 - **Migrations:** Flyway (V1–V8 applied)
 
@@ -119,11 +120,8 @@ async def transcribe(
     if not data:
         raise HTTPException(status_code=400, detail="Empty audio file")
     try:
-        result = _get_client().audio.transcriptions.create(
-            file=(audio.filename or "audio.webm", data),
-            model="whisper-large-v3-turbo",
-            response_format="text",
-        )
-        return {"transcript": result if isinstance(result, str) else result.text}
+        transcript = transcribe_audio(data, audio.content_type or "audio/webm")
+        return {"transcript": transcript}
     except Exception as e:
+        logging.exception("transcribe_audio failed")
         raise HTTPException(status_code=500, detail=str(e))

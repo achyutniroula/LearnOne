@@ -8,6 +8,11 @@ class Settings(BaseSettings):
     jwt_secret: str
     jwt_expiration_ms: int = 86400000
     groq_api_key: str = ""
+    gemini_api_key: str = ""
+    gemini_live_model: str = "gemini-2.5-flash-native-audio-preview-12-2025"
+    gemini_thinker_model: str = "gemini-2.5-flash"
+    embedding_model: str = "gemini-embedding-001"
+    thinker_cooldown_default_secs: int = 60
     cohere_api_key: str = ""
     judge0_rapidapi_key: str = ""
     voice_provider: str = "webspeech"           # "webspeech" or "elevenlabs"

@@ -13,6 +13,7 @@ import CodeBlock from '../components/CodeBlock'
 import MermaidBlock from '../components/MermaidBlock'
 import LeonStage from '../components/leon/LeonStage'
 import LeonInputBar from '../components/leon/LeonInputBar'
+import VoiceSession from '../components/leon/VoiceSession'
 import { useVoice } from '../hooks/useVoice'
 import { useLeonState } from '../hooks/useLeonState'
 import 'katex/dist/katex.min.css'
@@ -36,6 +37,7 @@ export default function ChatPage() {
   const [newGoal, setNewGoal] = useState('')
   const [creatingSession, setCreatingSession] = useState(false)
   const [diagrams, setDiagrams] = useState<DiagramMap>({})
+  const [showVoiceSession, setShowVoiceSession] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const id = sessionId ? parseInt(sessionId) : null
@@ -198,7 +200,13 @@ export default function ChatPage() {
       >
         <div className="p-4 flex flex-col gap-2">
           <button
-            onClick={() => navigate('/talk')}
+            onClick={() => {
+              if (id) {
+                setShowVoiceSession(true)
+              } else {
+                setShowNewModal(true)
+              }
+            }}
             className="btn-primary w-full flex items-center gap-2"
             style={{ background: 'rgba(100,200,255,0.07)', borderColor: 'rgba(100,200,255,0.25)' }}
           >
@@ -420,6 +428,16 @@ export default function ChatPage() {
           </motion.div>
         )}
       </AnimatePresence>
+      {/* ── Voice Session Overlay ────────────────────────────────────────── */}
+      {showVoiceSession && id && (
+        <VoiceSession
+          sessionId={id}
+          onClose={() => {
+            setShowVoiceSession(false)
+            sessionsApi.messages(id).then(setMessages).catch(handleApiError)
+          }}
+        />
+      )}
     </div>
   )
 }

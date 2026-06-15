@@ -2,7 +2,7 @@
 Fetches a public GitHub repository and assembles its full content into
 a context string stored server-side. On each chat turn, only the most
 relevant file sections are extracted and sent to the LLM (smart RAG),
-keeping every request within Groq's free-tier token budget.
+keeping every request within the model's token budget.
 """
 
 import re
@@ -15,9 +15,9 @@ MAX_FILE_CHARS  = 40_000   # truncate single file beyond this
 MAX_TOTAL_CHARS = 400_000  # stop adding files — full fetch, trimmed at send time
 MAX_FILES       = 200      # hard cap on file count
 
-# Tokens sent to Groq = chars / 4 roughly. llama-3.1-8b-instant context = 131K tokens.
-# We budget 100K tokens for repo context → 400K chars stored, 400K chars sent (just fits).
-# The remaining ~30K tokens cover system prompt + conversation history.
+# Tokens sent to Gemini = chars / 4 roughly.
+# We budget 100K tokens for repo context → 400K chars stored, 400K chars sent.
+# The remaining tokens cover system prompt + conversation history.
 MAX_CONCURRENCY = 20       # parallel HTTP fetches
 
 # ── Directories to always skip (generated/binary/tool noise) ─────────────────
@@ -284,7 +284,7 @@ async def fetch_repo_context(url: str) -> dict:
 
 
 # ── Smart context extraction ──────────────────────────────────────────────────
-# Groq free tier: ~6,000 TPM → single request budget ≈ 4,500 input tokens ≈ 18,000 chars.
+# Gemini API: single request budget ≈ 4,500 input tokens ≈ 18,000 chars (safe & fast).
 # We search the full stored context for files most relevant to the user's query.
 
 _STOP_WORDS = {
