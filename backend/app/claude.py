@@ -1,41 +1,76 @@
-from groq import Groq
+from google import genai
+from google.genai import types
 from .config import settings
 
-_client: Groq | None = None
+_client: genai.Client | None = None
 
-MODEL      = "llama-3.3-70b-versatile"   # high quality, 100K TPD free tier
-MODEL_FAST = "llama-3.1-8b-instant"      # large context, ~500K TPD free tier
+MODEL      = "gemini-2.5-flash"
+MODEL_FAST = "gemini-2.5-flash"
 
 
-def _get_client() -> Groq:
+def _get_client() -> genai.Client:
     global _client
     if _client is None:
-        _client = Groq(api_key=settings.groq_api_key)
+        api_key = settings.gemini_api_key or None
+        _client = genai.Client(api_key=api_key)
     return _client
 
 
 def run_claude(prompt: str, **_) -> str:
     """Single-turn completion — used for curriculum, quiz, summary, diagram generation."""
-    resp = _get_client().chat.completions.create(
+    resp = _get_client().models.generate_content(
         model=MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=2048,
-        temperature=0.7,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            max_output_tokens=2048,
+            temperature=0.7,
+        )
     )
-    return resp.choices[0].message.content or ""
+    return resp.text or ""
 
 
 def chat_with_history(messages: list[dict], system: str, model: str | None = None) -> str:
     """Multi-turn chat — messages are already [{"role": "user"|"assistant", "content": "..."}]."""
-    resp = _get_client().chat.completions.create(
-        model=model or MODEL,
-        messages=[{"role": "system", "content": system}] + messages,
-        max_tokens=2048,
+    contents = []
+    for m in messages:
+        role = "model" if m["role"] == "assistant" else "user"
+        contents.append(
+            types.Content(
+                role=role,
+                parts=[types.Part.from_text(text=m["content"])]
+            )
+        )
+
+    config = types.GenerateContentConfig(
+        system_instruction=system,
+        max_output_tokens=2048,
         temperature=0.7,
     )
-    return resp.choices[0].message.content or ""
+
+    resp = _get_client().models.generate_content(
+        model=model or MODEL,
+        contents=contents,
+        config=config
+    )
+    return resp.text or ""
+
+
+def transcribe_audio(data: bytes, mime_type: str) -> str:
+    """Transcribe audio bytes using Gemini."""
+    resp = _get_client().models.generate_content(
+        model=MODEL,
+        contents=[
+            types.Part.from_bytes(
+                data=data,
+                mime_type=mime_type,
+            ),
+            "Provide a clean transcription of this audio. Output only the transcribed text, with no extra conversational fillers, prefix, introduction, explanation, or formatting."
+        ]
+    )
+    return (resp.text or "").strip()
 
 
 def build_messages_prompt(history: list[dict], system_prompt: str) -> str:
     """Kept for backward compatibility — not used for chat anymore."""
     return system_prompt
+
