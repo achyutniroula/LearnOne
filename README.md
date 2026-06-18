@@ -243,6 +243,3 @@ consult_thinker(query)
 
 ---
 
-## 📄 License
-
-MIT
