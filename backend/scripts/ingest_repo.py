@@ -38,6 +38,7 @@ DOC_EXTS = {".md", ".rst", ".txt"}
 SKIP_DIRS = {
     "__pycache__", "node_modules", ".git", ".venv", "venv", "env",
     "dist", "build", ".next", "coverage", ".pytest_cache", "migrations",
+    ".claude", "worktrees", "agent-memory", "docs", "Documentation",
 }
 SKIP_FILES = {"package-lock.json", "yarn.lock", "poetry.lock"}
 MAX_FILE_BYTES = 200_000  # skip very large files (>200KB)
@@ -124,10 +125,15 @@ def _get_client() -> genai.Client:
 
 def embed_text(text: str) -> list[float]:
     """Embed text using gemini-embedding-001 (768-dim). Retries once on 429."""
+    from google.genai import types as gtypes
     client = _get_client()
     for attempt in range(2):
         try:
-            result = client.models.embed_content(model=EMBEDDING_MODEL, contents=text)
+            result = client.models.embed_content(
+                model=EMBEDDING_MODEL,
+                contents=text,
+                config=gtypes.EmbedContentConfig(output_dimensionality=768),
+            )
             return result.embeddings[0].values
         except Exception as e:
             msg = str(e)
@@ -235,13 +241,13 @@ def ingest(repo_root: Path, dry_run: bool, verbose: bool) -> None:
 
 def _flush_batch(db: Session, batch: list[dict]) -> None:
     from sqlalchemy import text
-    db.execute(
-        text(
-            "INSERT INTO repo_chunks (file_path, chunk_index, content, embedding) "
-            "VALUES (:file_path, :chunk_index, :content, CAST(:embedding AS vector))"
-        ),
-        batch,
+    # Execute one row at a time — psycopg2 executemany mangles ::vector cast syntax
+    stmt = text(
+        "INSERT INTO repo_chunks (file_path, chunk_index, content, embedding) "
+        "VALUES (:file_path, :chunk_index, :content, CAST(:embedding AS vector))"
     )
+    for row in batch:
+        db.execute(stmt, row)
     db.commit()
 
 
