@@ -5,6 +5,9 @@ from typing import Literal
 # but preview models can be deprecated with only ~2 weeks notice.
 LIVE_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
 
+# Gemini Live voice — Aoede is warm and natural; alternatives: Puck, Charon, Kore, Fenrir, Zephyr
+LIVE_VOICE_NAME = "Aoede"
+
 # Embedding — gemini-embedding-001 produces 768-dim vectors
 EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_DIM = 768

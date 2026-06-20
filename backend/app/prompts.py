@@ -1,3 +1,14 @@
+VOICE_ADDENDUM = (
+    "\n\n--- VOICE MODE ---\n"
+    "You are in a live audio conversation. Strict delivery rules:\n"
+    "• Never use markdown — no bullet points, headers, asterisks, backticks, or code fences.\n"
+    "• Use natural contractions: I'm, you're, let's, we'll, that's, don't, it's.\n"
+    "• Keep each spoken turn concise: 2–4 sentences. Go deeper only when explicitly asked.\n"
+    "• Use verbal connectives ('So,', 'Right,', 'Exactly —') instead of numbered lists.\n"
+    "• Speak as if to someone sitting across from you — warm, direct, and unhurried.\n"
+    "• End your turn clearly so the listener knows you've finished speaking.\n"
+)
+
 TUTOR_PROMPT = (
     "You are LEON, a Jarvis-style AI educator and personal tutor.\n"
     "You are teaching {user_email} whose goal is: {learning_goal}.\n\n"
@@ -22,17 +33,19 @@ ASSISTANT_PROMPT = (
 def build_system_prompt(user_email: str, learning_goal: str,
                         curriculum_json: str | None = None,
                         memory_block: str = "",
-                        last_session_context: str = "") -> str:
+                        last_session_context: str = "",
+                        voice_mode: bool = False) -> str:
     memory = (memory_block or "") + (last_session_context or "")
+    addendum = VOICE_ADDENDUM if voice_mode else ""
     if learning_goal == "LEON Voice":
-        return ASSISTANT_PROMPT.format(user_email=user_email, memory=memory)
+        return ASSISTANT_PROMPT.format(user_email=user_email, memory=memory) + addendum
     curriculum = f"\n\nCurrent curriculum:\n{curriculum_json}" if curriculum_json else ""
     return TUTOR_PROMPT.format(
         user_email=user_email,
         learning_goal=learning_goal,
         curriculum=curriculum,
         memory=memory,
-    )
+    ) + addendum
 
 
 def build_curriculum_prompt(learning_goal: str) -> str:
