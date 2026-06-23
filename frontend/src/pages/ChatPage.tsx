@@ -38,6 +38,9 @@ export default function ChatPage() {
   const [creatingSession, setCreatingSession] = useState(false)
   const [diagrams, setDiagrams] = useState<DiagramMap>({})
   const [showVoiceSession, setShowVoiceSession] = useState(false)
+  // Holds the session ID to pass to VoiceSession — may differ from the URL param
+  // when a LEON Voice session is auto-created from the no-session state.
+  const [voiceSessionId, setVoiceSessionId] = useState<number | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const id = sessionId ? parseInt(sessionId) : null
@@ -200,18 +203,33 @@ export default function ChatPage() {
       >
         <div className="p-4 flex flex-col gap-2">
           <button
-            onClick={() => {
+            onClick={async () => {
               if (id) {
+                setVoiceSessionId(id)
                 setShowVoiceSession(true)
               } else {
-                setShowNewModal(true)
+                // Auto-create a LEON Voice session so the user can speak immediately
+                // without having to fill in a learning goal first.
+                setCreatingSession(true)
+                try {
+                  const session = await sessionsApi.create('LEON Voice')
+                  setSessions((prev) => [session, ...prev])
+                  setVoiceSessionId(session.id)
+                  setShowVoiceSession(true)
+                  navigate(`/chat/${session.id}`)
+                } catch {
+                  setShowNewModal(true)
+                } finally {
+                  setCreatingSession(false)
+                }
               }
             }}
+            disabled={creatingSession}
             className="btn-primary w-full flex items-center gap-2"
             style={{ background: 'rgba(100,200,255,0.07)', borderColor: 'rgba(100,200,255,0.25)' }}
           >
             <Mic className="w-3.5 h-3.5" />
-            Talk to LEON
+            {creatingSession ? 'Starting…' : 'Talk to LEON'}
           </button>
           <button
             onClick={() => setShowNewModal(true)}
@@ -429,12 +447,13 @@ export default function ChatPage() {
         )}
       </AnimatePresence>
       {/* ── Voice Session Overlay ────────────────────────────────────────── */}
-      {showVoiceSession && id && (
+      {showVoiceSession && voiceSessionId && (
         <VoiceSession
-          sessionId={id}
+          sessionId={voiceSessionId}
           onClose={() => {
             setShowVoiceSession(false)
-            sessionsApi.messages(id).then(setMessages).catch(handleApiError)
+            setVoiceSessionId(null)
+            if (id) sessionsApi.messages(id).then(setMessages).catch(handleApiError)
           }}
         />
       )}

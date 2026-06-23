@@ -17,10 +17,13 @@ def _get_gemini_client() -> genai.Client:
 
 def embed_text(text_to_embed: str) -> list[float]:
     """Embed a string using the Gemini embedding model. Returns a float list."""
+    from google.genai import types as gtypes
+    from ..llm_registry import EMBEDDING_DIM
     client = _get_gemini_client()
     result = client.models.embed_content(
         model=EMBEDDING_MODEL,
         contents=text_to_embed,
+        config=gtypes.EmbedContentConfig(output_dimensionality=EMBEDDING_DIM),
     )
     return result.embeddings[0].values
 

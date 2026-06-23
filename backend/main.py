@@ -32,6 +32,7 @@ app.include_router(code.router)
 app.include_router(user.router)
 app.include_router(leon.router)
 app.include_router(voice.router)
+app.include_router(voice.diag_router)
 
 
 @app.get("/actuator/health")

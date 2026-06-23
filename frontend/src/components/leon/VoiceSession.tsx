@@ -34,11 +34,22 @@ export default function VoiceSession({ sessionId, onClose }: VoiceSessionProps) 
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const processorNodeRef = useRef<ScriptProcessorNode | null>(null)
 
+  // Diagnostic state
+  const diagRef = useRef<Array<Record<string, unknown>>>([])
+  const lastInterruptTsRef = useRef<number>(0)
+
   // Track status transitions based on playback/recording
   const statusRef = useRef<SessionStatus>('connecting')
   useEffect(() => {
     statusRef.current = status
   }, [status])
+
+  // Diagnostic helper: logs to console AND accumulates in diagRef for backend flush.
+  function diag(entry: Record<string, unknown>): void {
+    const stamped = { ts: performance.now(), ...entry }
+    diagRef.current.push(stamped)
+    console.log('[VOICE-DIAG]', JSON.stringify(stamped))
+  }
 
   useEffect(() => {
     const token = getToken()
@@ -78,8 +89,22 @@ export default function VoiceSession({ sessionId, onClose }: VoiceSessionProps) 
       }
 
       ws.onmessage = async (event) => {
+        const recvTs = performance.now()
+
         // Handle binary audio chunks from Gemini Live
         if (event.data instanceof ArrayBuffer) {
+          // Detect audio arriving soon after an interrupt — indicates queued frames
+          // slipping through the playback stop (the scheduler race condition).
+          if (lastInterruptTsRef.current > 0) {
+            const msSinceInterrupt = recvTs - lastInterruptTsRef.current
+            if (msSinceInterrupt < 500) {
+              diag({
+                event: 'WARN_audio_after_interrupt',
+                ms_since_interrupt: Math.round(msSinceInterrupt),
+                bytes: event.data.byteLength,
+              })
+            }
+          }
           setStatus('speaking')
           playAudioChunk(event.data)
           return
@@ -90,28 +115,45 @@ export default function VoiceSession({ sessionId, onClose }: VoiceSessionProps) 
           const data = JSON.parse(event.data)
           switch (data.event) {
             case 'thinking':
+              diag({ event: 'thinking', query: data.query?.slice(0, 120) })
               setStatus('thinking')
               setModelTranscript('Let me think...')
               break
+
             case 'thinking_complete':
+              diag({ event: 'thinking_complete' })
               setStatus('speaking')
               break
-            case 'interrupted':
+
+            case 'interrupted': {
+              lastInterruptTsRef.current = recvTs
+              const sourcesBefore = activeSourcesRef.current.length
               handleInterrupted()
+              diag({
+                event: 'interrupted',
+                sources_stopped: sourcesBefore,
+                handler_latency_ms: Math.round(performance.now() - recvTs),
+              })
               setStatus('listening')
               setUserTranscript('(Interrupted)')
               setModelTranscript('')
               break
+            }
+
             case 'model_transcript':
+              diag({ event: 'model_transcript', text: data.text })
               setStatus('speaking')
               setModelTranscript((prev) => prev === 'Let me think...' ? data.text : prev + data.text)
               break
+
             case 'user_transcript':
+              diag({ event: 'user_transcript', is_final: data.is_final, text: data.text })
               setUserTranscript(data.text)
               break
+
             case 'turn_complete':
+              diag({ event: 'turn_complete' })
               setStatus('listening')
-              // Reset local transcripts for next turn
               setUserTranscript('')
               setModelTranscript('')
               break
@@ -128,6 +170,7 @@ export default function VoiceSession({ sessionId, onClose }: VoiceSessionProps) 
       }
 
       ws.onclose = (event) => {
+        diag({ event: 'ws_closed', code: event.code, intentional: intentionalCloseRef.current })
         if (event.code === 1008) {
           setStatus('error')
           setErrorMsg('Session expired or authentication failed.')
@@ -172,8 +215,15 @@ export default function VoiceSession({ sessionId, onClose }: VoiceSessionProps) 
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,   // remove LEON's own audio from the mic feed
+          noiseSuppression: true,   // reduce background noise before PCM capture
+          autoGainControl: true,    // normalise mic levels — helps quiet speakers
+        },
+      })
       mediaStreamRef.current = stream
+      diag({ event: 'mic_opened' })
 
       const recordCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 })
       recordAudioContextRef.current = recordCtx
@@ -285,6 +335,19 @@ export default function VoiceSession({ sessionId, onClose }: VoiceSessionProps) 
     if (playAudioContextRef.current) {
       playAudioContextRef.current.close()
       playAudioContextRef.current = null
+    }
+
+    // Flush all accumulated diag events to the backend log file (fire-and-forget)
+    const events = diagRef.current.splice(0)
+    if (events.length > 0) {
+      fetch('/api/voice/diag', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getToken() ?? ''}`,
+        },
+        body: JSON.stringify({ session_id: sessionId, events }),
+      }).catch(() => {})
     }
   }
 
