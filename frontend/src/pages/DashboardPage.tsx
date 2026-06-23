@@ -24,7 +24,7 @@ export default function DashboardPage() {
       </header>
       <main style={styles.main}>
         <h2 style={styles.heading}>Welcome back.</h2>
-        <p style={styles.body}>Phase 1 — AI Teaching Loop — coming soon.</p>
+        <p style={styles.body}>Explore any public GitHub repository with LEON.</p>
       </main>
     </div>
   )

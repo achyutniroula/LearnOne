@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     gemini_thinker_model: str = "gemini-2.5-flash"
     embedding_model: str = "gemini-embedding-001"
     thinker_cooldown_default_secs: int = 60
+    github_token: str = ""
     cohere_api_key: str = ""
     judge0_rapidapi_key: str = ""
     voice_provider: str = "webspeech"           # "webspeech" or "elevenlabs"

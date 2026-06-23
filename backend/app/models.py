@@ -18,15 +18,35 @@ class User(Base):
     sessions = relationship("LearningSession", back_populates="user", cascade="all, delete-orphan")
 
 
+class IndexedRepo(Base):
+    __tablename__ = "indexed_repos"
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    repo_url = Column(Text, nullable=False, unique=True)
+    owner = Column(String(255), nullable=False)
+    repo_name = Column(String(255), nullable=False)
+    default_branch = Column(String(255), nullable=False, default="main")
+    status = Column(String(20), nullable=False, default="pending")
+    file_count = Column(Integer)
+    chunk_count = Column(Integer)
+    error_message = Column(Text)
+    indexed_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), default=now_utc, nullable=False)
+    sessions = relationship("LearningSession", back_populates="indexed_repo")
+    chunks = relationship("RepoChunk", back_populates="repo", cascade="all, delete-orphan")
+
+
 class LearningSession(Base):
     __tablename__ = "learning_sessions"
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    repo_id = Column(BigInteger, ForeignKey("indexed_repos.id", ondelete="SET NULL"))
     title = Column(String(255))
     learning_goal = Column(Text, nullable=False)
+    repo_url = Column(String(512))
     status = Column(String(20), default="active")
     created_at = Column(DateTime(timezone=True), default=now_utc, nullable=False)
     user = relationship("User", back_populates="sessions")
+    indexed_repo = relationship("IndexedRepo", back_populates="sessions")
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
     curriculum = relationship("Curriculum", back_populates="session", uselist=False, cascade="all, delete-orphan")
 
@@ -116,10 +136,12 @@ class ConceptReview(Base):
 
 class RepoChunk(Base):
     __tablename__ = "repo_chunks"
-
     id = Column(BigInteger, primary_key=True, autoincrement=True)
+    repo_id = Column(BigInteger, ForeignKey("indexed_repos.id", ondelete="CASCADE"), nullable=False)
     file_path = Column(String, nullable=False)
     chunk_index = Column(Integer, nullable=False)
     content = Column(Text, nullable=False)
+    token_estimate = Column(Integer)
     embedding = Column(Vector(768))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    repo = relationship("IndexedRepo", back_populates="chunks")

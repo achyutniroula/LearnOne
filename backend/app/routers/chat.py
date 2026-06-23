@@ -10,6 +10,7 @@ from ..schemas import ChatRequest, ChatResponse
 from ..claude import run_claude, chat_with_history, build_messages_prompt
 from ..redis_client import rate_limit_check
 from ..prompts import build_system_prompt, build_summary_prompt, build_extraction_prompt
+from ..services.rag import retrieve_context
 
 router = APIRouter(prefix="/api/sessions", tags=["chat"])
 
@@ -46,8 +47,15 @@ def chat(session_id: int, req: ChatRequest, db: Session = Depends(get_db),
 
     memory_block = _build_memory_block(current_user.id, db)
     last_ctx = _last_session_context(current_user.id, session_id, db)
-    system_prompt = build_system_prompt(current_user.email, session.learning_goal,
+    repo_info = session.repo_url or session.learning_goal
+    system_prompt = build_system_prompt(current_user.email, repo_info,
                                         curriculum_json, memory_block, last_ctx)
+
+    # Augment with RAG context if this session has an indexed repo
+    if session.repo_id:
+        rag_ctx = retrieve_context(req.message, db, repo_id=session.repo_id)
+        if rag_ctx:
+            system_prompt += f"\n\nRelevant code from the repository:\n{rag_ctx}"
 
     reply = chat_with_history(claude_history, system_prompt)
 
@@ -98,12 +106,12 @@ def _build_memory_block(user_id: int, db: Session) -> str:
         return ""
     sb = []
     if memories:
-        sb.append("\n\nLearner profile:")
+        sb.append("\n\nUser context:")
         for m in memories:
             val = m.value[:120] + "…" if len(m.value) > 120 else m.value
             sb.append(f"\n- [{m.category}] {val} ({m.confidence}% confidence)")
     if nodes:
-        sb.append("\n\nConcept mastery:")
+        sb.append("\n\nConcept familiarity:")
         for n in nodes:
             s = "" if n.exposures == 1 else "s"
             sb.append(f"\n- {n.concept_label}: {n.mastery}/100 ({n.exposures} exposure{s})")
@@ -116,7 +124,8 @@ def _last_session_context(user_id: int, current_session_id: int, db: Session) ->
     ).order_by(LearningSession.created_at.desc()).limit(2).all()
     for s in sessions:
         if s.id != current_session_id:
-            return f"\n\nPrevious session: {s.learning_goal} — build on that context."
+            ref = s.repo_url or s.learning_goal
+            return f"\n\nPrevious session: {ref} — build on that context."
     return ""
 
 

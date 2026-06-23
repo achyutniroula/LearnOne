@@ -44,7 +44,7 @@ export default function RightPanel({ curriculum, sessionId }: Props) {
   }, [fetchMemory, fetchGraph])
 
   const tabs: { id: Tab; label: string }[] = [
-    { id: 'curriculum', label: 'Plan' },
+    { id: 'curriculum', label: 'Overview' },
     { id: 'memory', label: 'Memory' },
     { id: 'graph', label: 'Graph' },
     { id: 'quiz', label: 'Quiz' },
@@ -108,7 +108,7 @@ export default function RightPanel({ curriculum, sessionId }: Props) {
                 </div>
               ) : (
                 <p className="text-xs" style={{ color: 'var(--outline)' }}>
-                  {sessionId ? 'Generating curriculum…' : 'Start a session to see your plan.'}
+                  {sessionId ? 'Generating repo overview…' : 'Paste a repo URL to start exploring it with LEON.'}
                 </p>
               )
             )}

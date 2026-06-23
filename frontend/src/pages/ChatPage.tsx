@@ -7,6 +7,7 @@ import rehypeKatex from 'rehype-katex'
 import { Plus, LogOut, MessageSquare, Mic } from 'lucide-react'
 import clsx from 'clsx'
 import { sessionsApi, Session, Message, Curriculum } from '../api/sessions'
+import { reposApi } from '../api/repos'
 import { useAuth } from '../contexts/AuthContext'
 import RightPanel from '../components/RightPanel'
 import CodeBlock from '../components/CodeBlock'
@@ -34,8 +35,15 @@ export default function ChatPage() {
   const [curriculum, setCurriculum] = useState<Curriculum | null>(null)
   const [loading, setLoading] = useState(false)
   const [showNewModal, setShowNewModal] = useState(false)
-  const [newGoal, setNewGoal] = useState('')
+  const [newRepoUrl, setNewRepoUrl] = useState('')
   const [creatingSession, setCreatingSession] = useState(false)
+  // Indexing progress state — set after session create when repo isn't ready yet
+  const [pendingSessionId, setPendingSessionId] = useState<number | null>(null)
+  const [indexingRepoId, setIndexingRepoId] = useState<number | null>(null)
+  const [indexingStatus, setIndexingStatus] = useState<string | null>(null)
+  const [indexingFileCount, setIndexingFileCount] = useState<number | null>(null)
+  const [indexingChunkCount, setIndexingChunkCount] = useState<number | null>(null)
+  const [indexingError, setIndexingError] = useState<string | null>(null)
   const [diagrams, setDiagrams] = useState<DiagramMap>({})
   const [showVoiceSession, setShowVoiceSession] = useState(false)
   // Holds the session ID to pass to VoiceSession — may differ from the URL param
@@ -72,6 +80,33 @@ export default function ChatPage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // ── Poll indexing status ───────────────────────────────────────────────
+  useEffect(() => {
+    if (!indexingRepoId) return
+    if (indexingStatus === 'ready' || indexingStatus === 'failed') return
+
+    const interval = setInterval(async () => {
+      try {
+        const data = await reposApi.status(indexingRepoId)
+        setIndexingStatus(data.status)
+        setIndexingFileCount(data.fileCount)
+        setIndexingChunkCount(data.chunkCount)
+        if (data.status === 'failed') {
+          setIndexingError(data.errorMessage ?? 'Indexing failed.')
+        }
+        if (data.status === 'ready') {
+          clearInterval(interval)
+          setShowNewModal(false)
+          setIndexingRepoId(null)
+          setIndexingStatus(null)
+          if (pendingSessionId) navigate(`/chat/${pendingSessionId}`)
+        }
+      } catch { /* network blip — keep polling */ }
+    }, 3000)
+
+    return () => clearInterval(interval)
+  }, [indexingRepoId, indexingStatus, pendingSessionId])
 
   // ── Send a message ─────────────────────────────────────────────────────
   async function handleSend(text: string, imageData?: string, imageMediaType?: string) {
@@ -122,19 +157,41 @@ export default function ChatPage() {
   // ── Create new session ─────────────────────────────────────────────────
   async function handleCreateSession(e: FormEvent) {
     e.preventDefault()
-    if (!newGoal.trim()) return
+    if (!newRepoUrl.trim()) return
     setCreatingSession(true)
+    setIndexingError(null)
     try {
-      const session = await sessionsApi.create(newGoal.trim())
+      const session = await sessionsApi.create(newRepoUrl.trim())
       setSessions((prev) => [session, ...prev])
-      setShowNewModal(false)
-      setNewGoal('')
-      navigate(`/chat/${session.id}`)
+      setNewRepoUrl('')
+
+      if (!session.repoId || session.repoStatus === 'ready') {
+        // Repo already indexed or no repo (LEON Voice) — navigate immediately
+        setShowNewModal(false)
+        navigate(`/chat/${session.id}`)
+      } else {
+        // Indexing in progress — stay in modal, start polling
+        setPendingSessionId(session.id)
+        setIndexingRepoId(session.repoId)
+        setIndexingStatus(session.repoStatus ?? 'pending')
+        setIndexingFileCount(null)
+        setIndexingChunkCount(null)
+      }
     } catch {
-      alert('Failed to create session.')
+      setIndexingError('Failed to create session. Please try again.')
     } finally {
       setCreatingSession(false)
     }
+  }
+
+  function handleDismissModal() {
+    setShowNewModal(false)
+    setIndexingRepoId(null)
+    setIndexingStatus(null)
+    setIndexingError(null)
+    setPendingSessionId(null)
+    // If indexing was in progress, navigate to the session anyway (will work once ready)
+    if (pendingSessionId) navigate(`/chat/${pendingSessionId}`)
   }
 
   const activeSession = sessions.find((s) => s.id === id)
@@ -209,10 +266,11 @@ export default function ChatPage() {
                 setShowVoiceSession(true)
               } else {
                 // Auto-create a LEON Voice session so the user can speak immediately
-                // without having to fill in a learning goal first.
+                // without having to select a repo first.
                 setCreatingSession(true)
                 try {
                   const session = await sessionsApi.create('LEON Voice')
+                  // 'LEON Voice' is the sentinel for an unattached voice session
                   setSessions((prev) => [session, ...prev])
                   setVoiceSessionId(session.id)
                   setShowVoiceSession(true)
@@ -236,7 +294,7 @@ export default function ChatPage() {
             className="btn-ghost w-full flex items-center gap-2"
           >
             <Plus className="w-3.5 h-3.5" />
-            New Session
+            Explore Repo
           </button>
         </div>
         <div className="mx-4 h-px" style={{ background: 'rgba(72,72,75,0.3)' }} />
@@ -244,7 +302,7 @@ export default function ChatPage() {
         <div className="flex-1 overflow-y-auto no-scrollbar py-2">
           {sessions.length === 0 && (
             <p className="px-6 text-xs" style={{ color: 'var(--outline)' }}>
-              No sessions yet.
+              No repos yet. Add one to get started.
             </p>
           )}
           {sessions.map((sess) => {
@@ -388,7 +446,7 @@ export default function ChatPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={(e) => e.target === e.currentTarget && setShowNewModal(false)}
+            onClick={(e) => e.target === e.currentTarget && handleDismissModal()}
           >
             <motion.div
               className="glass-card-static w-full max-w-lg p-8"
@@ -397,51 +455,95 @@ export default function ChatPage() {
               exit={{ opacity: 0, y: 20, scale: 0.97 }}
               transition={{ duration: 0.25 }}
             >
-              <h2
-                className="text-xl font-light mb-2"
-                style={{ color: 'var(--on-surface)' }}
-              >
-                New learning session
-              </h2>
-              <p className="text-sm mb-6" style={{ color: 'var(--on-muted)' }}>
-                Describe what you want to learn and I'll generate a curriculum.
-              </p>
-              <form onSubmit={handleCreateSession} className="flex flex-col gap-4">
-                <textarea
-                  className="input-base resize-none"
-                  rows={4}
-                  value={newGoal}
-                  onChange={(e) => setNewGoal(e.target.value)}
-                  placeholder="e.g. I want to understand how neural networks work, starting from linear algebra basics."
-                  autoFocus
-                />
-                <div className="flex gap-3 justify-end">
+              {/* ── Indexing progress view ─────────────────────────────── */}
+              {indexingRepoId && indexingStatus !== 'failed' ? (
+                <div className="flex flex-col items-center gap-6 py-4">
+                  <div className="flex gap-1">
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm font-light mb-1" style={{ color: 'var(--on-surface)' }}>
+                      {indexingStatus === 'fetching' && 'Fetching repository files…'}
+                      {indexingStatus === 'indexing' && (
+                        indexingFileCount
+                          ? `Indexing ${indexingFileCount} files…`
+                          : 'Indexing files…'
+                      )}
+                      {indexingStatus === 'pending' && 'Preparing…'}
+                      {(!indexingStatus || indexingStatus === 'ready') && 'Almost ready…'}
+                    </p>
+                    {indexingChunkCount != null && (
+                      <p className="text-xs" style={{ color: 'var(--on-muted)' }}>
+                        {indexingChunkCount} chunks embedded
+                      </p>
+                    )}
+                  </div>
                   <button
                     type="button"
-                    className="btn-ghost"
-                    onClick={() => setShowNewModal(false)}
+                    className="btn-ghost text-xs"
+                    onClick={handleDismissModal}
                   >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="btn-primary"
-                    disabled={creatingSession || !newGoal.trim()}
-                  >
-                    {creatingSession ? (
-                      <span className="flex items-center gap-2">
-                        <span className="typing-dot" />
-                        <span className="typing-dot" />
-                        <span className="typing-dot" />
-                      </span>
-                    ) : (
-                      <>
-                        <Plus className="w-3.5 h-3.5" /> Start Session
-                      </>
-                    )}
+                    Continue in background
                   </button>
                 </div>
-              </form>
+              ) : (
+                <>
+                  <h2
+                    className="text-xl font-light mb-2"
+                    style={{ color: 'var(--on-surface)' }}
+                  >
+                    Explore a GitHub repo
+                  </h2>
+                  <p className="text-sm mb-6" style={{ color: 'var(--on-muted)' }}>
+                    Paste a public GitHub repo URL and LEON will generate a structured overview.
+                  </p>
+
+                  {indexingError && (
+                    <p className="text-xs mb-4 px-1" style={{ color: 'var(--error)' }}>
+                      {indexingError}
+                    </p>
+                  )}
+
+                  <form onSubmit={handleCreateSession} className="flex flex-col gap-4">
+                    <input
+                      className="input-base"
+                      type="url"
+                      value={newRepoUrl}
+                      onChange={(e) => setNewRepoUrl(e.target.value)}
+                      placeholder="https://github.com/owner/repo"
+                      autoFocus
+                    />
+                    <div className="flex gap-3 justify-end">
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        onClick={handleDismissModal}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="btn-primary"
+                        disabled={creatingSession || !newRepoUrl.trim()}
+                      >
+                        {creatingSession ? (
+                          <span className="flex items-center gap-2">
+                            <span className="typing-dot" />
+                            <span className="typing-dot" />
+                            <span className="typing-dot" />
+                          </span>
+                        ) : (
+                          <>
+                            <Plus className="w-3.5 h-3.5" /> Start Exploring
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </>
+              )}
             </motion.div>
           </motion.div>
         )}

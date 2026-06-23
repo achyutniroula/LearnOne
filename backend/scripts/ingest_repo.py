@@ -169,6 +169,32 @@ def collect_files(repo_root: Path) -> list[Path]:
     return sorted(files)
 
 
+SELF_REPO_URL = "local://learnone-self"
+
+
+def _get_or_create_self_repo(db: Session) -> int:
+    """
+    Ensure an indexed_repos row exists for the LearnOne self-repo.
+    Returns the repo_id to use when inserting repo_chunks.
+    """
+    from sqlalchemy import text as sqla_text
+    row = db.execute(
+        sqla_text("SELECT id FROM indexed_repos WHERE repo_url = :url"),
+        {"url": SELF_REPO_URL},
+    ).fetchone()
+    if row:
+        return row.id
+    result = db.execute(
+        sqla_text(
+            "INSERT INTO indexed_repos (repo_url, owner, repo_name, default_branch, status) "
+            "VALUES (:url, 'local', 'learnone-self', 'main', 'ready') RETURNING id"
+        ),
+        {"url": SELF_REPO_URL},
+    )
+    db.commit()
+    return result.fetchone().id
+
+
 def ingest(repo_root: Path, dry_run: bool, verbose: bool) -> None:
     from sqlalchemy import text
 
@@ -185,10 +211,15 @@ def ingest(repo_root: Path, dry_run: bool, verbose: bool) -> None:
 
     db: Session = SessionLocal()
     try:
-        # Clean slate — delete all existing rows
-        deleted = db.execute(text("DELETE FROM repo_chunks")).rowcount
+        repo_id = _get_or_create_self_repo(db)
+        log.info(f"Using indexed_repos.id={repo_id} for LearnOne self-repo")
+
+        # Clean slate for this repo_id only
+        deleted = db.execute(
+            text("DELETE FROM repo_chunks WHERE repo_id = :rid"), {"rid": repo_id}
+        ).rowcount
         db.commit()
-        log.info(f"Deleted {deleted} existing rows from repo_chunks")
+        log.info(f"Deleted {deleted} existing rows from repo_chunks for repo_id={repo_id}")
 
         total_chunks = 0
         batch: list[dict] = []
@@ -218,6 +249,7 @@ def ingest(repo_root: Path, dry_run: bool, verbose: bool) -> None:
 
                 vec_literal = "[" + ",".join(str(v) for v in embedding) + "]"
                 batch.append({
+                    "repo_id": repo_id,
                     "file_path": rel,
                     "chunk_index": idx,
                     "content": chunk,
@@ -234,7 +266,14 @@ def ingest(repo_root: Path, dry_run: bool, verbose: bool) -> None:
             _flush_batch(db, batch)
             total_chunks += len(batch)
 
-        log.info(f"Ingestion complete. {total_chunks} chunks written to repo_chunks.")
+        # Update chunk_count on the indexed_repos row
+        db.execute(
+            text("UPDATE indexed_repos SET chunk_count = :n WHERE id = :rid"),
+            {"n": total_chunks, "rid": repo_id},
+        )
+        db.commit()
+
+        log.info(f"Ingestion complete. {total_chunks} chunks written to repo_chunks (repo_id={repo_id}).")
     finally:
         db.close()
 
@@ -243,8 +282,8 @@ def _flush_batch(db: Session, batch: list[dict]) -> None:
     from sqlalchemy import text
     # Execute one row at a time — psycopg2 executemany mangles ::vector cast syntax
     stmt = text(
-        "INSERT INTO repo_chunks (file_path, chunk_index, content, embedding) "
-        "VALUES (:file_path, :chunk_index, :content, CAST(:embedding AS vector))"
+        "INSERT INTO repo_chunks (repo_id, file_path, chunk_index, content, embedding) "
+        "VALUES (:repo_id, :file_path, :chunk_index, :content, CAST(:embedding AS vector))"
     )
     for row in batch:
         db.execute(stmt, row)

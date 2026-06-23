@@ -153,7 +153,7 @@ export default function LeonInputBar({ onSend, disabled, voice }: LeonInputBarPr
           className="input-base"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder={voice.listening ? 'Listening…' : 'Ask anything…'}
+          placeholder={voice.listening ? 'Listening…' : 'Ask LEON anything about this repo…'}
           disabled={disabled || voice.listening}
           autoFocus
         />

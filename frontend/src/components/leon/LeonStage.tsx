@@ -15,7 +15,7 @@ interface LeonStageProps {
 /**
  * LeonStage controls the macro layout.
  *
- * Hero mode  (no active session): orb centered, tagline, Start Session button
+ * Hero mode  (no active session): orb centered, tagline, Explore Repo button
  * Companion mode (session active): orb docked top-center, messages scroll below
  *
  * The LeonOrb's `layoutId="leon-orb-root"` enables the shared-layout animation
@@ -54,11 +54,12 @@ export default function LeonStage({
               className="text-2xl font-light tracking-wide"
               style={{ color: 'var(--on-surface)' }}
             >
-              What do you want to{' '}
-              <span className="rgb-text-gradient">learn</span>?
+              Paste a{' '}
+              <span className="rgb-text-gradient">GitHub repo</span>{' '}
+              URL
             </h2>
             <p className="text-sm max-w-xs" style={{ color: 'var(--on-muted)' }}>
-              Start a session and I'll build a personalised curriculum for you.
+              LearnOne helps you deeply understand any public GitHub repository through conversation with LEON.
             </p>
             <div className="flex gap-3 mt-2">
               <button onClick={() => navigate('/talk')} className="btn-primary">
@@ -67,7 +68,7 @@ export default function LeonStage({
               </button>
               <button onClick={onStartSession} className="btn-ghost">
                 <Plus className="w-4 h-4" />
-                New Session
+                Explore Repo
               </button>
             </div>
           </div>

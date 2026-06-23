@@ -1,0 +1,1 @@
+ALTER TABLE learning_sessions ADD COLUMN IF NOT EXISTS repo_url VARCHAR(512);

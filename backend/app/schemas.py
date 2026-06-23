@@ -17,14 +17,38 @@ class AuthResponse(BaseModel):
 
 
 class CreateSessionRequest(BaseModel):
-    learningGoal: str
+    repoUrl: Optional[str] = None
+    repoId: Optional[int] = None
 
 class SessionResponse(BaseModel):
     id: int
     title: Optional[str]
     learningGoal: str
+    repoUrl: Optional[str] = None
+    repoId: Optional[int] = None
+    repoStatus: Optional[str] = None
     status: str
     createdAt: datetime
+    model_config = {"from_attributes": True}
+
+
+class IndexRepoRequest(BaseModel):
+    repo_url: str
+
+class IndexedRepoStatusResponse(BaseModel):
+    repoId: int
+    status: str
+    fileCount: Optional[int] = None
+    chunkCount: Optional[int] = None
+    errorMessage: Optional[str] = None
+
+class IndexedRepoSummary(BaseModel):
+    id: int
+    owner: str
+    repoName: str
+    repoUrl: str
+    status: str
+    indexedAt: Optional[datetime] = None
     model_config = {"from_attributes": True}
 
 

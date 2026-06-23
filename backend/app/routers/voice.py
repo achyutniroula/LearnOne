@@ -124,8 +124,9 @@ async def websocket_voice(
 
     memory_block = _build_memory_block(user.id, db)
     last_ctx = _last_session_context(user.id, session_id, db)
+    repo_info = session.repo_url or session.learning_goal
     system_prompt = build_system_prompt(
-        user.email, session.learning_goal, curriculum_json, memory_block, last_ctx,
+        user.email, repo_info, curriculum_json, memory_block, last_ctx,
         voice_mode=True,
     )
 
@@ -317,7 +318,9 @@ async def websocket_voice(
                                               query_preview=query[:120])
                                         await websocket.send_json({"event": "thinking", "query": query})
                                         _thinker_t0 = time.monotonic()
-                                        thinker_response = await consult_thinker(query, system_prompt)
+                                        thinker_response = await consult_thinker(
+                                            query, system_prompt, repo_id=session.repo_id
+                                        )
                                         _diag("tool_call_complete",
                                               turn=_diag_turn_no,
                                               name=fc.name,

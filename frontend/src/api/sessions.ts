@@ -4,6 +4,9 @@ export interface Session {
   id: number
   title: string
   learningGoal: string
+  repoUrl?: string
+  repoId?: number
+  repoStatus?: string
   status: string
   createdAt: string
 }
@@ -28,8 +31,8 @@ export interface Curriculum {
 }
 
 export const sessionsApi = {
-  create: (learningGoal: string) =>
-    api.post<Session>('/api/sessions', { learningGoal }).then((r) => r.data),
+  create: (repoUrl: string) =>
+    api.post<Session>('/api/sessions', { repoUrl }).then((r) => r.data),
 
   list: () => api.get<Session[]>('/api/sessions').then((r) => r.data),
 

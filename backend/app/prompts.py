@@ -9,16 +9,18 @@ VOICE_ADDENDUM = (
     "• End your turn clearly so the listener knows you've finished speaking.\n"
 )
 
-TUTOR_PROMPT = (
-    "You are LEON, a Jarvis-style AI educator and personal tutor.\n"
-    "You are teaching {user_email} whose goal is: {learning_goal}.\n\n"
-    "Teaching principles:\n"
-    "- Adjust complexity to the learner's demonstrated level.\n"
-    "- Use concrete analogies and real-world examples.\n"
-    "- End every response with a follow-up question or comprehension check.\n"
-    "- Use markdown: headers, bullet points, code blocks where appropriate.\n"
-    "- If the learner asks something off-topic, gently redirect to the learning goal.\n"
-    "{curriculum}{memory}"
+REPO_PROMPT = (
+    "You are LEON, an expert software engineer who has read and understood the entire {repo_info} repository.\n"
+    "You are helping {user_email} understand this codebase deeply.\n\n"
+    "Your approach:\n"
+    "- Start with architecture and high-level structure before diving into details.\n"
+    "- Explain data flow, module relationships, and key design decisions.\n"
+    "- Use concrete analogies to make complex patterns feel approachable.\n"
+    "- Adjust depth to match the questions being asked — be concise unless the user wants more.\n"
+    "- Use markdown: headers, bullet points, and code blocks where appropriate.\n"
+    "- Your purpose is to make the repo feel completely understandable, not to quiz or test.\n"
+    "- Never say 'as an AI' — you are LEON.\n"
+    "{overview}{memory}"
 )
 
 ASSISTANT_PROMPT = (
@@ -30,36 +32,41 @@ ASSISTANT_PROMPT = (
 )
 
 
-def build_system_prompt(user_email: str, learning_goal: str,
+def build_system_prompt(user_email: str, repo_info: str,
                         curriculum_json: str | None = None,
                         memory_block: str = "",
                         last_session_context: str = "",
                         voice_mode: bool = False) -> str:
     memory = (memory_block or "") + (last_session_context or "")
     addendum = VOICE_ADDENDUM if voice_mode else ""
-    if learning_goal == "LEON Voice":
+    if repo_info == "LEON Voice":
         return ASSISTANT_PROMPT.format(user_email=user_email, memory=memory) + addendum
-    curriculum = f"\n\nCurrent curriculum:\n{curriculum_json}" if curriculum_json else ""
-    return TUTOR_PROMPT.format(
+    overview = f"\n\nRepo overview:\n{curriculum_json}" if curriculum_json else ""
+    return REPO_PROMPT.format(
         user_email=user_email,
-        learning_goal=learning_goal,
-        curriculum=curriculum,
+        repo_info=repo_info,
+        overview=overview,
         memory=memory,
     ) + addendum
 
 
-def build_curriculum_prompt(learning_goal: str) -> str:
+def build_curriculum_prompt(repo_info: str) -> str:
     return (
-        f'Generate a step-by-step learning curriculum for the following goal: "{learning_goal}"\n\n'
+        f'Generate a structured overview for the GitHub repository: "{repo_info}"\n\n'
         "Return ONLY a valid JSON object in this exact format (no markdown, no explanation):\n"
-        '{"title": "short curriculum title", "phases": [{"name": "Phase name", "topics": ["topic1", "topic2"]}]}'
+        '{"title": "owner/repo-name", "phases": ['
+        '{"name": "Architecture Overview", "topics": ["what the repo does", "how it is structured"]},'
+        '{"name": "Key Components", "topics": ["main modules", "services", "entry points"]},'
+        '{"name": "Data Flow", "topics": ["how data moves through the system"]},'
+        '{"name": "Good Starting Points", "topics": ["where to look first when reading the code"]}'
+        ']}'
     )
 
 
 def build_summary_prompt(conversation_text: str) -> str:
     return (
-        "Summarize the following learning conversation into 3-5 bullet points.\n"
-        "Capture the key concepts explained, questions asked, and progress made.\n"
+        "Summarize the following conversation into 3-5 bullet points.\n"
+        "Capture the key topics discussed, questions asked, and concepts explained.\n"
         "Be concise — this summary will be used as context for future messages.\n\n"
         f"Conversation:\n{conversation_text}"
     )
@@ -68,12 +75,12 @@ def build_summary_prompt(conversation_text: str) -> str:
 def build_extraction_prompt(user_message: str, assistant_reply: str, existing_keys: list[str]) -> str:
     existing = ", ".join(existing_keys) if existing_keys else "none"
     return (
-        f"Analyze this learning exchange and extract insights.\n\n"
+        f"Analyze this exchange and extract insights about the user.\n\n"
         f"Existing memory keys (update these instead of creating duplicates): {existing}\n\n"
         f"Exchange:\nUser: {user_message}\nAssistant: {assistant_reply}\n\n"
         "Return ONLY valid JSON (no markdown, no prose):\n"
         '{"memories": [{"key": "short-kebab-case-key", "category": "struggle|style|background|misconception|preference", '
-        '"value": "concise fact about learner", "confidence": 70}], '
+        '"value": "concise fact about the user", "confidence": 70}], '
         '"concepts": [{"label": "Concept Label", "mastery": 65}]}\n'
         "Both arrays may be empty if nothing meaningful to extract."
     )

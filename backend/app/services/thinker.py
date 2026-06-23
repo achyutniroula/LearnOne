@@ -88,19 +88,21 @@ def _call_groq(model_id: str, messages: list[dict], system: str) -> str:
     return resp.choices[0].message.content or ""
 
 
-def _consult_thinker_sync(query: str, system: str) -> str:
+def _consult_thinker_sync(query: str, system: str, repo_id: int | None = None) -> str:
     """
     Sync: retrieve RAG context, then try each model in THINKER_CHAIN.
     Sets Redis cooldown keys on 429. Returns friendly string if all fail.
+
+    repo_id filters RAG to a specific indexed repo; None searches all chunks.
     """
     local_db = SessionLocal()
     try:
-        rag_context = retrieve_context(query, local_db)
+        rag_context = retrieve_context(query, local_db, repo_id=repo_id)
     finally:
         local_db.close()
 
     if rag_context:
-        full_query = f"Context from the LearnOne codebase:\n{rag_context}\n\nQuestion: {query}"
+        full_query = f"Relevant code context:\n{rag_context}\n\nQuestion: {query}"
     else:
         full_query = query
 
@@ -127,7 +129,7 @@ def _consult_thinker_sync(query: str, system: str) -> str:
     return "I'm having trouble thinking right now — give me a moment and try again."
 
 
-async def consult_thinker(query: str, system: str) -> str:
+async def consult_thinker(query: str, system: str, repo_id: int | None = None) -> str:
     """Async entry point — wraps sync work in a thread executor."""
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _consult_thinker_sync, query, system)
+    return await loop.run_in_executor(None, _consult_thinker_sync, query, system, repo_id)
