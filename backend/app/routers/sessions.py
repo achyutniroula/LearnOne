@@ -1,3 +1,4 @@
+import logging
 import re
 import threading
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,6 +13,7 @@ from ..claude import run_claude
 from ..prompts import build_curriculum_prompt
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
+logger = logging.getLogger(__name__)
 
 _GITHUB_RE = re.compile(r'github\.com/([^/]+/[^/?#]+?)(?:\.git)?(?:[/?#].*)?$')
 
@@ -31,7 +33,7 @@ def _generate_curriculum_async(session_id: int, repo_info: str, db_factory):
             db.add(curriculum)
             db.commit()
         except Exception:
-            pass
+            logger.exception("Curriculum generation failed for session_id=%s", session_id)
         finally:
             db.close()
     threading.Thread(target=task, daemon=True).start()
@@ -119,6 +121,19 @@ def create_session(
     if repo_url != "LEON Voice":
         from ..database import SessionLocal
         _generate_curriculum_async(session.id, repo_url, SessionLocal)
+
+    # Auto-trigger scriptwriter if story is already ready
+    if indexed_repo is not None:
+        from ..models import RepoStory
+        story = db.query(RepoStory).filter(
+            RepoStory.repo_id == indexed_repo.id
+        ).first()
+        if story and story.status == "ready":
+            import threading as _threading
+            from ..services.script_writer import run_script_generation
+            _threading.Thread(
+                target=run_script_generation, args=(session.id,), daemon=True
+            ).start()
 
     repo_status = indexed_repo.status if indexed_repo else None
     return _to_session_response(session, repo_status=repo_status)

@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
-import { Plus, LogOut, MessageSquare, Mic } from 'lucide-react'
+import { Plus, LogOut, MessageSquare, Mic, Film } from 'lucide-react'
 import clsx from 'clsx'
 import { sessionsApi, Session, Message, Curriculum } from '../api/sessions'
 import { reposApi } from '../api/repos'
@@ -15,6 +15,7 @@ import MermaidBlock from '../components/MermaidBlock'
 import LeonStage from '../components/leon/LeonStage'
 import LeonInputBar from '../components/leon/LeonInputBar'
 import VoiceSession from '../components/leon/VoiceSession'
+import AnimationPanel from '../components/AnimationPanel'
 import { useVoice } from '../hooks/useVoice'
 import { useLeonState } from '../hooks/useLeonState'
 import 'katex/dist/katex.min.css'
@@ -33,6 +34,7 @@ export default function ChatPage() {
   const [sessions, setSessions] = useState<Session[]>([])
   const [messages, setMessages] = useState<Message[]>([])
   const [curriculum, setCurriculum] = useState<Curriculum | null>(null)
+  const [curriculumTimedOut, setCurriculumTimedOut] = useState(false)
   const [loading, setLoading] = useState(false)
   const [showNewModal, setShowNewModal] = useState(false)
   const [newRepoUrl, setNewRepoUrl] = useState('')
@@ -49,6 +51,8 @@ export default function ChatPage() {
   // Holds the session ID to pass to VoiceSession — may differ from the URL param
   // when a LEON Voice session is auto-created from the no-session state.
   const [voiceSessionId, setVoiceSessionId] = useState<number | null>(null)
+  const [showAnimation, setShowAnimation] = useState(false)
+  const [animationSessionId, setAnimationSessionId] = useState<number | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const id = sessionId ? parseInt(sessionId) : null
@@ -74,8 +78,40 @@ export default function ChatPage() {
   useEffect(() => {
     if (!id) return
     sessionsApi.messages(id).then(setMessages).catch(handleApiError)
-    sessionsApi.curriculum(id).then(setCurriculum).catch(handleApiError)
+    setCurriculum(null)
+    setCurriculumTimedOut(false)
   }, [id])
+
+  // ── Poll curriculum until the async generator has produced one ─────────
+  // Gives up after ~2 minutes in case backend generation failed silently.
+  useEffect(() => {
+    if (!id || curriculum) return
+
+    let cancelled = false
+    let attempts = 0
+    const MAX_ATTEMPTS = 30
+
+    const poll = () => {
+      attempts += 1
+      sessionsApi.curriculum(id).then((c) => {
+        if (!cancelled) setCurriculum(c)
+      }).catch((err: unknown) => {
+        const status = (err as { response?: { status?: number } })?.response?.status
+        if (status !== 404) {
+          handleApiError(err)
+          return
+        }
+        if (attempts >= MAX_ATTEMPTS && !cancelled) {
+          clearInterval(interval)
+          setCurriculumTimedOut(true)
+        }
+      })
+    }
+
+    poll()
+    const interval = setInterval(poll, 4000)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [id, curriculum])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -290,6 +326,20 @@ export default function ChatPage() {
             {creatingSession ? 'Starting…' : 'Talk to LEON'}
           </button>
           <button
+            onClick={() => {
+              if (id) {
+                setAnimationSessionId(id)
+                setShowAnimation(true)
+              }
+            }}
+            disabled={!id}
+            className="btn-ghost w-full flex items-center gap-2"
+            style={{ opacity: id ? 1 : 0.4 }}
+          >
+            <Film className="w-3.5 h-3.5" />
+            Explore Explainer
+          </button>
+          <button
             onClick={() => setShowNewModal(true)}
             className="btn-ghost w-full flex items-center gap-2"
           >
@@ -434,7 +484,7 @@ export default function ChatPage() {
         </LeonStage>
 
         {/* ── Right panel ───────────────────────────────────────────────── */}
-        <RightPanel curriculum={curriculum} sessionId={id} />
+        <RightPanel curriculum={curriculum} sessionId={id} curriculumTimedOut={curriculumTimedOut} />
       </div>
 
       {/* ── New session modal ────────────────────────────────────────────── */}
@@ -557,6 +607,13 @@ export default function ChatPage() {
             setVoiceSessionId(null)
             if (id) sessionsApi.messages(id).then(setMessages).catch(handleApiError)
           }}
+        />
+      )}
+      {/* ── Animation Panel Overlay ──────────────────────────────────────── */}
+      {showAnimation && animationSessionId && (
+        <AnimationPanel
+          sessionId={animationSessionId}
+          onClose={() => setShowAnimation(false)}
         />
       )}
     </div>

@@ -134,6 +134,27 @@ class ConceptReview(Base):
     created_at = Column(DateTime(timezone=True), default=now_utc, nullable=False)
 
 
+class RepoStory(Base):
+    __tablename__ = "repo_stories"
+    id           = Column(BigInteger, primary_key=True, autoincrement=True)
+    repo_id      = Column(BigInteger, ForeignKey("indexed_repos.id", ondelete="CASCADE"), nullable=False, unique=True)
+    story        = Column(JSON, nullable=False, default=dict)
+    generated_at = Column(DateTime(timezone=True), default=now_utc, nullable=False)
+    status       = Column(String, nullable=False, default="pending")
+    error        = Column(Text)
+
+
+class AnimationScript(Base):
+    __tablename__ = "animation_scripts"
+    id           = Column(BigInteger, primary_key=True, autoincrement=True)
+    session_id   = Column(BigInteger, ForeignKey("learning_sessions.id", ondelete="CASCADE"), nullable=False, unique=True)
+    repo_id      = Column(BigInteger, ForeignKey("indexed_repos.id"), nullable=False)
+    script       = Column(JSON, nullable=False, default=dict)
+    generated_at = Column(DateTime(timezone=True), default=now_utc, nullable=False)
+    status       = Column(String, nullable=False, default="pending")
+    error        = Column(Text)
+
+
 class RepoChunk(Base):
     __tablename__ = "repo_chunks"
     id = Column(BigInteger, primary_key=True, autoincrement=True)

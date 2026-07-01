@@ -519,6 +519,14 @@ def run_indexing_pipeline(repo_id: int, repo_url: str) -> None:
                 row.error_message = truncation_note
             db.commit()
 
+        # Auto-trigger repo analyst to build story for animation pipeline
+        import threading as _threading
+        from .repo_analyst import run_repo_analysis as _run_repo_analysis
+        _threading.Thread(
+            target=_run_repo_analysis, args=(repo_id,), daemon=True
+        ).start()
+        logging.info("Indexer: launched analyst for repo_id=%s", repo_id)
+
         logging.info(
             f"Indexer: {owner}/{repo_name} ready — "
             f"{total_stored} chunks stored (repo_id={repo_id})"

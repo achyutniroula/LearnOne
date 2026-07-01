@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..database import SessionLocal
-from ..llm_registry import THINKER_CHAIN, COOLDOWN_KEY_PREFIX, ModelConfig
+from ..llm_registry import THINKER_CHAIN, COOLDOWN_KEY_PREFIX, ModelConfig, GENERATION_MAX_TOKENS
 from .rag import retrieve_context
 
 _gemini_client: genai.Client | None = None
@@ -127,6 +127,76 @@ def _consult_thinker_sync(query: str, system: str, repo_id: int | None = None) -
             continue
 
     return "I'm having trouble thinking right now — give me a moment and try again."
+
+
+def generate_with_fallback(
+    prompt: str,
+    system: str = "",
+    max_output_tokens: int = GENERATION_MAX_TOKENS,
+) -> str:
+    """
+    Single-turn generation over THINKER_CHAIN with 429 cooldowns. No RAG.
+    Raises RuntimeError if all models fail or are in cooldown.
+    """
+    last_error = None
+    for mc in THINKER_CHAIN:
+        if _is_in_cooldown(mc.model_id):
+            logging.debug(f"generate_with_fallback: {mc.model_id} in cooldown, skipping")
+            continue
+        try:
+            messages = [{"role": "user", "content": prompt}]
+            if mc.provider == "gemini":
+                contents = []
+                for msg in messages:
+                    role = "model" if msg["role"] == "assistant" else "user"
+                    contents.append(
+                        genai_types.Content(
+                            role=role,
+                            parts=[genai_types.Part.from_text(text=msg["content"])],
+                        )
+                    )
+                config = genai_types.GenerateContentConfig(
+                    system_instruction=system or None,
+                    max_output_tokens=max_output_tokens,
+                    temperature=0.7,
+                )
+                resp = _get_gemini_client().models.generate_content(
+                    model=mc.model_id,
+                    contents=contents,
+                    config=config,
+                )
+                return resp.text or ""
+            elif mc.provider == "groq":
+                from groq import Groq
+                client = Groq(api_key=settings.groq_api_key)
+                groq_messages: list[dict] = []
+                if system:
+                    groq_messages.append({"role": "system", "content": system})
+                groq_messages += [{"role": m["role"], "content": m["content"]} for m in messages]
+                resp = client.chat.completions.create(
+                    model=mc.model_id,
+                    messages=groq_messages,
+                    max_tokens=max_output_tokens,
+                )
+                return resp.choices[0].message.content or ""
+        except Exception as e:
+            err = str(e)
+            if "429" in err or "RESOURCE_EXHAUSTED" in err or "rate_limit" in err.lower():
+                delay = _parse_retry_delay(err, mc.default_cooldown_secs)
+                _set_cooldown(mc.model_id, delay)
+                logging.warning(f"generate_with_fallback: {mc.model_id} rate-limited, cooldown {delay}s")
+                last_error = e
+                continue
+            last_error = e
+            logging.warning(
+                "generate_with_fallback: %s non-rate-limit error, trying next model: %s",
+                mc.model_id, e,
+            )
+            continue
+
+    raise RuntimeError(
+        f"All models in THINKER_CHAIN failed or are in cooldown. Last error: {last_error}"
+    )
 
 
 async def consult_thinker(query: str, system: str, repo_id: int | None = None) -> str:

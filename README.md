@@ -242,5 +242,3 @@ consult_thinker(query)
 | Auth | JWT in React memory (never localStorage) + bcrypt |
 
 ---
-
-

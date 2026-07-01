@@ -64,7 +64,7 @@ def chat(session_id: int, req: ChatRequest, db: Session = Depends(get_db),
     db.commit()
 
     diagram_code = None
-    if VISUAL_RE.search(req.message):
+    if VISUAL_RE.search(req.message) and not re.search(r"\banimat", req.message, re.I):
         diagram_code = _generate_diagram(reply)
 
     threading.Thread(target=_extract_async, args=(current_user.id, session_id, req.message, reply),
@@ -137,7 +137,9 @@ def _generate_diagram(reply: str) -> str | None:
         "No markdown fences. No explanation."
     )
     try:
-        return run_claude(prompt).strip()
+        raw = run_claude(prompt).strip()
+        cleaned = re.sub(r'^```[a-zA-Z]*\n?|\n?```$', '', raw).strip()
+        return cleaned or None
     except Exception:
         return None
 

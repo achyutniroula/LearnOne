@@ -20,9 +20,10 @@ const CATEGORY_COLOR: Record<string, string> = {
 interface Props {
   curriculum: Curriculum | null
   sessionId: number | null
+  curriculumTimedOut?: boolean
 }
 
-export default function RightPanel({ curriculum, sessionId }: Props) {
+export default function RightPanel({ curriculum, sessionId, curriculumTimedOut }: Props) {
   const [tab, setTab] = useState<Tab>('curriculum')
   const [memories, setMemories] = useState<UserMemory[]>([])
   const [nodes, setNodes] = useState<KnowledgeNode[]>([])
@@ -108,7 +109,11 @@ export default function RightPanel({ curriculum, sessionId }: Props) {
                 </div>
               ) : (
                 <p className="text-xs" style={{ color: 'var(--outline)' }}>
-                  {sessionId ? 'Generating repo overview…' : 'Paste a repo URL to start exploring it with LEON.'}
+                  {!sessionId
+                    ? 'Paste a repo URL to start exploring it with LEON.'
+                    : curriculumTimedOut
+                      ? "Couldn't generate the overview — ask LEON about the repo directly instead."
+                      : 'Generating repo overview…'}
                 </p>
               )
             )}

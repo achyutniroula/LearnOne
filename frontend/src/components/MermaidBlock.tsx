@@ -15,7 +15,12 @@ export default function MermaidBlock({ code }: { code: string }) {
     setError(false)
     mermaid.render(id, code)
       .then(({ svg }) => { if (ref.current) ref.current.innerHTML = svg })
-      .catch(() => setError(true))
+      .catch(() => {
+        setError(true)
+        // Mermaid can inject an error graphic directly into the document body
+        // before rejecting, outside of this component's tracked DOM — clean it up.
+        document.getElementById(id)?.remove()
+      })
   }, [code])
 
   if (error) return null

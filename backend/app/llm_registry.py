@@ -26,6 +26,11 @@ class ModelConfig:
     default_cooldown_secs: int = 60
 
 
+# Generation model for analyst + scriptwriter (single-turn, no live streaming)
+GENERATION_MODEL = "gemini-2.5-flash"
+GENERATION_MAX_TOKENS = 8192
+ANALYST_CHUNK_LIMIT = 150
+
 # Ordered fallback chain: primary first, cheapest/fastest last resort last.
 # Groq model IDs could not be verified from docs scrape (JS-rendered page).
 # Verify they are still active: GET https://api.groq.com/openai/v1/models

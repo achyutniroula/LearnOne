@@ -1,0 +1,108 @@
+Here is a comprehensive description of the voice interaction system:
+
+---
+LearnOne Voice Interaction System — Full Technical Description
+
+LearnOne has two distinct voice interaction modes that serve different purposes and use completely different architectures.
+
+---
+Mode 1: VoiceSession — Gemini Live Real-Time Audio
+
+This is the primary, full-duplex voice mode. It opens a dedicated fullscreen overlay UI and establishes a persistent WebSocket tunnel between the browser and the backend, which in turn holds a persistent bidirectional audio connection to Google's Gemini Live API.
+
+Connection setup (frontend — VoiceSession.tsx):
+
+When the user enters a voice session, the frontend opens a WebSocket to wss://<host>/ws/sessions/{sessionId}/voice?token=<JWT>. The JWT is passed as a query parameter because browsers cannot set Authorization headers on WebSocket upgrades. The binaryType is set to arraybuffer so audio chunks are received as raw binary.
+
+On ws.onopen, the frontend immediately calls startRecording(), which:
+1. Opens the mic via getUserMedia({ audio: true }).
+2. Creates a 16 kHz AudioContext using ScriptProcessorNode (buffer size 2048, mono).
+3. In each onaudioprocess callback, converts the Float32Array samples to 16-bit signed PCM (by multiplying floats by 32767/32768), then sends the raw ArrayBuffer over the WebSocket as a binary frame — continuously and unconditionally for the duration of the session.
+
+Backend WebSocket handler (voice.py):
+
+The backend handler authenticates the JWT, loads the user's session record, curriculum JSON, memory block, and last-session context, then builds a rich system_prompt (using the same prompt-building logic as the text chat). It then opens a session with gemini-2.5-flash-native-audio-preview-12-2025 via the Google GenAI async live API.
+
+Two concurrent async tasks run inside the Gemini session context:
+- send_audio task: Drains an asyncio.Queue and forwards each PCM blob to Gemini as audio/pcm;rate=16000.
+- receive_and_forward coroutine: Iterates over all Gemini response events and dispatches them back to the browser.
+
+A separate read_browser_audio background task runs outside the reconnect loop, reading binary frames from the browser WebSocket and putting them into the queue — this buffers audio across Gemini reconnects so no mic data is lost.
+
+Gemini Live events handled:
+
+┌────────────────────────────────┬──────────────────────────────────────────────────────┬──────────────────────────────────────┐
+│             Event              │                    Backend Action                    │         Frontend Event Sent          │
+├────────────────────────────────┼──────────────────────────────────────────────────────┼──────────────────────────────────────┤
+│ session_resumption_update      │ Stores the new resumption handle                     │ (none)                               │
+├────────────────────────────────┼──────────────────────────────────────────────────────┼──────────────────────────────────────┤
+│ go_away (server closing)       │ Saves current turn to DB, re-enters outer loop with  │ (none)                               │
+│                                │ stored handle to reconnect transparently             │                                      │
+├────────────────────────────────┼──────────────────────────────────────────────────────┼──────────────────────────────────────┤
+│ tool_call (consult_thinker)    │ Calls thinker service (see below), sends result back │ {event: "thinking"} → {event:        │
+│                                │  to Gemini                                           │ "thinking_complete"}                 │
+├────────────────────────────────┼──────────────────────────────────────────────────────┼──────────────────────────────────────┤
+│ server_content.interrupted     │ Saves partial turn to DB, resets accumulators        │ {event: "interrupted"}               │
+├────────────────────────────────┼──────────────────────────────────────────────────────┼──────────────────────────────────────┤
+│ model_turn.parts[].inline_data │ Forwards raw audio bytes directly                    │ Binary frame (PCM audio)             │
+├────────────────────────────────┼──────────────────────────────────────────────────────┼──────────────────────────────────────┤
+│ output_transcription.text      │ Accumulates model speech text                        │ {event: "model_transcript", text:    │
+│                                │                                                      │ "..."}                               │
+├────────────────────────────────┼──────────────────────────────────────────────────────┼──────────────────────────────────────┤
+│ input_transcription.text       │ Accumulates user speech text (is_final/interim)      │ {event: "user_transcript", text:     │
+│                                │                                                      │ "...", is_final: bool}               │
+├────────────────────────────────┼──────────────────────────────────────────────────────┼──────────────────────────────────────┤
+│ turn_complete                  │ Saves full turn (user + model text) to ChatMessage   │ {event: "turn_complete"}             │
+│                                │ DB table                                             │                                      │
+└────────────────────────────────┴──────────────────────────────────────────────────────┴──────────────────────────────────────┘
+
+Session resilience: The Gemini Live connection has a ~10-minute lifetime. The backend manages reconnection transparently using the SessionResumptionConfig handle — approximately every 30 seconds Gemini sends a new resumption handle which the backend stores. When a GoAway event arrives, the outer while loop reconnects immediately using the stored handle, preserving conversation context. Context window compression is configured to trigger at 25,600 tokens with a sliding window target of 12,800 tokens to support sessions well beyond 15 minutes.
+
+Frontend audio playback:
+
+When binary frames arrive, playAudioChunk() is called. It maintains a separate 24 kHz AudioContext and a scheduling queue: each chunk is decoded from Int16Array back to Float32Array, wrapped in an AudioBuffer, and scheduled on the Web Audio timeline using AudioBufferSourceNode.start(startTime) where startTime = max(currentTime, nextStartTime). This ensures gapless, continuous playback even when chunks arrive in rapid bursts. Active source nodes are tracked, and when the last one ends, the status transitions back to listening.
+
+Barge-in (interruption): When a GoAway or interrupted event arrives, handleInterrupted() is called — it immediately calls .stop() on every active AudioBufferSourceNode and resets nextStartTimeRef to zero, cutting off LEON's speech instantly.
+
+UI states: The VoiceSession orb cycles through four states — connecting, listening, thinking, speaking — each reflected in the LeonOrb component and a status label. User and model transcripts appear as subtitle-style text above and below the orb. The frontend also does client-side reconnection (up to 3 attempts, 1-second delay) if the WebSocket closes unexpectedly.
+
+---
+Mode 2: useVoice — Client-Side VAD + Whisper Transcription
+
+This is a simpler, turn-based voice mode used inside the regular text chat interface (not the fullscreen voice session). It does not use Gemini Live — instead it records a complete utterance, sends it to a backend /api/leon/transcribe endpoint (backed by Whisper or a similar ASR model), and injects the resulting text into the normal Claude-powered chat flow. LEON's responses are then read aloud via the browser's Web Speech Synthesis API.
+
+Voice Activity Detection (useVoice.ts):
+
+The mic opens immediately via getUserMedia. An AudioContext + AnalyserNode (FFT size 512) runs a requestAnimationFrame tick loop computing the RMS of each frame. A dual-threshold VAD is applied:
+- Adaptive noise floor (bgRms): slowly tracks ambient noise with bgRms = 0.995 * bgRms + 0.005 * rms while not in confirmed speech.
+- Dynamic threshold: max(SPEECH_MIN_RMS=0.010, bgRms × SNR_RATIO=2.5) — voice must be 2.5× above ambient to register.
+- Confirmation gate: speech must sustain above threshold for 200ms before it's considered real (filters coughs/clicks).
+- Barge-in: cancelSpeak() fires the moment confirmed speech is detected, cutting off TTS immediately. The MediaRecorder only starts recording after barge-in fires — so the recorded audio only contains the user's voice, not LEON's output.
+- Silence detection: after confirmed speech ends, the system counts 1,200ms of silence before stopping the MediaRecorder and submitting the audio.
+- Timeout: if no speech is detected within 20 seconds, the mic closes automatically.
+
+Recording format: MediaRecorder uses the browser's best supported format in priority order: audio/webm;codecs=opus → audio/webm → audio/ogg;codecs=opus → audio/mp4. The blob is POSTed to /api/leon/transcribe as multipart/form-data. Blobs under 500 bytes are discarded as silence.
+
+TTS playback (speak()): Markdown is stripped (code blocks, LaTeX, bold/italic, links, headers) before synthesis. The cleaned text is split into individual sentences using regex (/[^.!?…]+[.!?…]+/g), and each sentence is queued as a separate SpeechSynthesisUtterance. Voice selection priorities: Microsoft Natural/Neural voices (Aria, Jenny) → known female names (Sara, Samantha, etc.) → Google voices → any English voice. Utterances are chained via onend callbacks at rate=0.88, pitch=1.06 for a calm, natural delivery. An AbortController pattern enables clean cancellation of in-progress chains. TTS is also paused automatically when the browser tab becomes hidden.
+
+---
+The Thinker Service (thinker.py)
+
+Both voice modes can trigger the Thinker when Gemini decides it needs deeper reasoning (in VoiceSession, this is an explicit function_call for consult_thinker). The Thinker:
+
+1. RAG retrieval: embeds the query using gemini-embedding-001 (768-dim vectors), performs a cosine similarity search against repo_chunks in PostgreSQL (via pgvector), and retrieves the top-5 most relevant code chunks from the LearnOne codebase. These are prepended to the query as context.
+2. Model fallback chain: tries models in priority order — gemini-2.5-flash → gemini-2.5-flash-lite → gemini-3.1-flash-lite → llama-3.3-70b-versatile (Groq) → llama-3.1-8b-instant (Groq). Each model that returns a 429/rate-limit error is placed in a Redis cooldown (keyed learnone:thinker:cooldown:<model_id>) with a duration parsed from the error's retryDelay field. Cooled-down models are skipped instantly on subsequent calls.
+3. The result is returned as a string to Gemini (in VoiceSession) or directly to the chat handler.
+
+---
+Summary of Data Flows
+
+VoiceSession (full-duplex real-time):
+Browser mic (16kHz PCM) → WS binary frames → backend queue → Gemini Live
+Gemini Live audio response → backend → WS binary frames → browser Web Audio API (24kHz)
+Gemini text transcripts → backend → WS JSON events → browser subtitle display
+Gemini tool_call → backend Thinker (RAG + LLM chain) → Gemini function response
+
+useVoice (turn-based):
+Browser mic (VAD-gated) → MediaRecorder blob → POST /api/leon/transcribe → transcript text
+Text injected into normal chat → Claude API response → Web Speech Synthesis
