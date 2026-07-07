@@ -28,9 +28,17 @@ def _count_sentences(text: str) -> list[str]:
     return [s.strip() for s in _SENTENCE_SPLIT.split(text.strip()) if s.strip()]
 
 
+def _as_dict(value) -> dict:
+    """LLM output can put a scalar where an object was expected — coerce defensively."""
+    return value if isinstance(value, dict) else {}
+
+
 def _check_scenes(scenes: list, introduced: set, context: str, errors: list[str]) -> None:
     """Walk scenes in order; update introduced set as appear_character scenes are seen."""
     for i, scene in enumerate(scenes):
+        if not isinstance(scene, dict):
+            errors.append(f"{context} scene[{i}]: expected an object, got {type(scene).__name__}")
+            continue
         scene_id = scene.get("scene_id", f"scene[{i}]")
         loc = f"{context} scene {scene_id}"
 
@@ -38,12 +46,13 @@ def _check_scenes(scenes: list, introduced: set, context: str, errors: list[str]
         for key in ("scene_id", "duration_ms", "narration", "animation", "canvas_state"):
             if key not in scene:
                 errors.append(f"{loc}: missing required key '{key}'")
-        if "narration" in scene and "text" not in scene["narration"]:
+        narration = _as_dict(scene.get("narration")) if "narration" in scene else None
+        if narration is not None and "text" not in narration:
             errors.append(f"{loc}: narration missing 'text'")
         if "animation" not in scene:
             continue
-        anim = scene["animation"]
-        if "type" not in anim:
+        anim = _as_dict(scene["animation"])
+        if not anim or "type" not in anim:
             errors.append(f"{loc}: animation missing 'type'")
             continue
 
@@ -54,8 +63,8 @@ def _check_scenes(scenes: list, introduced: set, context: str, errors: list[str]
             errors.append(f"{loc}: unknown animation type '{atype}'")
 
         # Rule 7: narration sentence length
-        if "narration" in scene and "text" in scene["narration"]:
-            text = scene["narration"]["text"]
+        if narration and isinstance(narration.get("text"), str):
+            text = narration["text"]
             sentences = _count_sentences(text)
             if len(sentences) > 2:
                 errors.append(f"{loc}: narration has {len(sentences)} sentences (max 2)")
@@ -71,7 +80,7 @@ def _check_scenes(scenes: list, introduced: set, context: str, errors: list[str]
             char_id = anim.get("id")
             if char_id:
                 introduced.add(char_id)
-            pos = anim.get("position", {})
+            pos = _as_dict(anim.get("position", {}))
             for axis in ("x", "y"):
                 val = pos.get(axis)
                 if val is None:
@@ -114,10 +123,12 @@ def validate_script(script: dict, repo_story: dict) -> list[str]:
     """Returns list of error strings. Empty list means valid."""
     errors: list[str] = []
 
-    valid_char_ids = {c["id"] for c in repo_story.get("characters", []) if "id" in c}
+    valid_char_ids = {c["id"] for c in repo_story.get("characters", []) if isinstance(c, dict) and "id" in c}
 
-    overview = script.get("overview", {})
+    overview = _as_dict(script.get("overview", {}))
     scenes = overview.get("scenes", [])
+    if not isinstance(scenes, list):
+        scenes = []
 
     # Rule 3: total_duration_ms == sum of scene durations
     computed_total = sum(s.get("duration_ms", 0) for s in scenes)
@@ -135,7 +146,12 @@ def validate_script(script: dict, repo_story: dict) -> list[str]:
 
     # Check components
     components = script.get("components", [])
+    if not isinstance(components, list):
+        components = []
     for comp in components:
+        if not isinstance(comp, dict):
+            errors.append(f"component: expected an object, got {type(comp).__name__}")
+            continue
         char_id = comp.get("character_id")
 
         # Rule 4: character_id must exist in repo_story characters
@@ -145,8 +161,10 @@ def validate_script(script: dict, repo_story: dict) -> list[str]:
             )
 
         # Each component deep_dive has its own independent introduced set
-        deep_dive = comp.get("deep_dive", {})
+        deep_dive = _as_dict(comp.get("deep_dive", {}))
         dd_scenes = deep_dive.get("scenes", [])
+        if not isinstance(dd_scenes, list):
+            dd_scenes = []
         dd_introduced: set[str] = set()
         _check_scenes(dd_scenes, dd_introduced, f"component[{char_id}] deep_dive", errors)
 
