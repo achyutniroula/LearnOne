@@ -1,9 +1,9 @@
 services:
   - type: web
     name: learnone-backend
-    runtime: java
-    buildCommand: cd backend && mvn -B package -DskipTests
-    startCommand: java -jar backend/target/learnone-backend-0.1.0-SNAPSHOT.jar
+    runtime: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --app-dir backend
     envVars:
       - key: DB_URL
         sync: false
@@ -13,10 +13,10 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
-      - key: JWT_SECRET
+      - key: GROQ_API_KEY
         sync: false
-      - key: JWT_EXPIRATION_MS
-        value: "86400000"
-      - key: ANTHROPIC_API_KEY
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GITHUB_TOKEN
         sync: false
     healthCheckPath: /actuator/health

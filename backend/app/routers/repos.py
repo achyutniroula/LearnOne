@@ -1,17 +1,30 @@
 import threading
 import re
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import User, IndexedRepo
-from ..auth import get_current_user
+from ..models import IndexedRepo
 from ..schemas import IndexRepoRequest, IndexedRepoStatusResponse, IndexedRepoSummary
 from ..services.indexer import run_indexing_pipeline
 
 router = APIRouter(prefix="/api/repos", tags=["repos"])
 
 _GITHUB_RE = re.compile(r'github\.com/([^/]+/[^/?#]+?)(?:\.git)?(?:[/?#].*)?$')
+
+# A background indexing thread updates the row on every real progress tick
+# (each embedding batch, ~seconds apart). If it hasn't moved in this long, the
+# thread almost certainly died (server restart, host went to sleep, crash) and
+# the row is orphaned — safe to reset and restart rather than leave it stuck forever.
+_STALE_THRESHOLD = timedelta(minutes=3)
+
+
+def _is_stale(row: IndexedRepo) -> bool:
+    updated = row.updated_at
+    if updated.tzinfo is None:
+        updated = updated.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - updated > _STALE_THRESHOLD
 
 
 def _parse_github_url(url: str) -> tuple[str, str]:
@@ -34,7 +47,6 @@ def _start_indexing(repo_id: int, repo_url: str) -> None:
 def index_repo(
     req: IndexRepoRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     try:
         owner, repo_name = _parse_github_url(req.repo_url)
@@ -48,24 +60,30 @@ def index_repo(
 
     if existing:
         if existing.status in ('pending', 'fetching', 'indexing'):
-            # Already in progress — return current state
-            return IndexedRepoStatusResponse(
-                repoId=existing.id,
-                status=existing.status,
-                fileCount=existing.file_count,
-                chunkCount=existing.chunk_count,
-            )
-        if existing.status == 'ready':
+            if not _is_stale(existing):
+                # Genuinely in progress — return current state
+                return IndexedRepoStatusResponse(
+                    repoId=existing.id,
+                    status=existing.status,
+                    fileCount=existing.file_count,
+                    totalChunks=existing.total_chunks,
+                    chunkCount=existing.chunk_count,
+                )
+            # No progress in _STALE_THRESHOLD — the worker thread died (server
+            # restart/sleep/crash). Reset and restart rather than leave it stuck.
+        elif existing.status == 'ready':
             return IndexedRepoStatusResponse(
                 repoId=existing.id,
                 status='ready',
                 fileCount=existing.file_count,
+                totalChunks=existing.total_chunks,
                 chunkCount=existing.chunk_count,
             )
-        # status == 'failed' — reset and re-index
+        # status == 'failed', or stale in-progress — reset and re-index
         existing.status = 'pending'
         existing.error_message = None
         existing.file_count = None
+        existing.total_chunks = None
         existing.chunk_count = None
         existing.indexed_at = None
         db.commit()
@@ -91,7 +109,6 @@ def index_repo(
 def get_repo_status(
     repo_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     row = db.get(IndexedRepo, repo_id)
     if not row:
@@ -100,6 +117,7 @@ def get_repo_status(
         repoId=row.id,
         status=row.status,
         fileCount=row.file_count,
+        totalChunks=row.total_chunks,
         chunkCount=row.chunk_count,
         errorMessage=row.error_message,
     )
@@ -108,7 +126,6 @@ def get_repo_status(
 @router.get("", response_model=list[IndexedRepoSummary])
 def list_repos(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     rows = db.query(IndexedRepo).order_by(IndexedRepo.created_at.desc()).all()
     return [

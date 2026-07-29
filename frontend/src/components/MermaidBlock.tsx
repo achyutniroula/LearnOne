@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import mermaid from 'mermaid'
 
-mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose' })
+mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'strict' })
 
 let idCounter = 0
 

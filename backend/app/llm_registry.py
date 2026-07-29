@@ -1,19 +1,14 @@
 from dataclasses import dataclass
 from typing import Literal
 
-# Live API — use stable model; newer preview available (gemini-3.1-flash-live-preview)
-# but preview models can be deprecated with only ~2 weeks notice.
-LIVE_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
-
-# Gemini Live voice — Aoede is warm and natural; alternatives: Puck, Charon, Kore, Fenrir, Zephyr
-LIVE_VOICE_NAME = "Aoede"
-
-# Embedding — gemini-embedding-001 produces 768-dim vectors
-EMBEDDING_MODEL = "gemini-embedding-001"
-EMBEDDING_DIM = 768
+# Embedding — local, in-process via fastembed (ONNXRuntime). No external API,
+# no rate limit. bge-small-en-v1.5 produces 384-dim vectors.
+EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
+EMBEDDING_DIM = 384
 
 # RAG retrieval
 RAG_TOP_K = 5
+EXPLAINER_TOP_K = 12
 
 # Cooldown Redis key prefix (follows learnone:* namespace)
 COOLDOWN_KEY_PREFIX = "learnone:thinker:cooldown"

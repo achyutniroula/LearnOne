@@ -27,3 +27,15 @@ Thumbs.db
 *.log
 logs/
 .mcp.json
+
+# Python
+__pycache__/
+*.pyc
+
+# Claude Code agent artifacts
+.claude/agent-memory/
+.claude/worktrees/
+backend/.claude/
+
+# graphify skill output
+graphify-out/

@@ -12,7 +12,6 @@ import os
 import re
 import shutil
 import subprocess
-import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -21,7 +20,6 @@ import httpx
 
 from ..config import settings
 from ..database import SessionLocal
-from ..llm_registry import EMBEDDING_MODEL, EMBEDDING_DIM
 
 GITHUB_API = "https://api.github.com"
 MAX_REPO_MB = 500
@@ -29,7 +27,6 @@ CLONE_THRESHOLD_MB = 100
 MAX_FILE_BYTES = 200_000        # 200 KB per file
 MAX_FILES_AFTER_FILTER = 1000   # large-repo cutoff
 CHUNK_BATCH_SIZE = 20
-RATE_LIMIT_PAUSE_SECS = 60
 
 # Chunking token targets (1 token ≈ 4 chars)
 SOURCE_MAX_CHARS = 1_600    # ~400 tokens
@@ -63,17 +60,6 @@ _SRC_BOUNDARIES: dict[str, list[str]] = {
     '.swift': ['\nfunc ', '\nclass ', '\nstruct ', '\nenum '],
     '.scala': ['\ndef ', '\nclass ', '\nobject ', '\ntrait '],
 }
-
-_gemini_client = None
-
-
-def _get_gemini_client():
-    global _gemini_client
-    if _gemini_client is None:
-        from google import genai
-        _gemini_client = genai.Client(api_key=settings.gemini_api_key or None)
-    return _gemini_client
-
 
 # ── File classification ───────────────────────────────────────────────────────
 
@@ -377,42 +363,12 @@ def _fetch_repo_files(repo_url: str) -> tuple[str, str, str, list[tuple[str, str
 # ── Embedding ─────────────────────────────────────────────────────────────────
 
 def _embed_batch(texts: list[str]) -> list[list[float]] | None:
-    """Embed a batch of texts. Retries 3× with exponential backoff, then pauses 60s."""
-    from google.genai import types as gtypes
-
-    client = _get_gemini_client()
-    for attempt in range(3):
-        try:
-            result = client.models.embed_content(
-                model=EMBEDDING_MODEL,
-                contents=texts,
-                config=gtypes.EmbedContentConfig(output_dimensionality=EMBEDDING_DIM),
-            )
-            return [list(e.values) for e in result.embeddings]
-        except Exception as e:
-            err = str(e)
-            if "429" in err or "RESOURCE_EXHAUSTED" in err:
-                delay = 5 * (2 ** attempt)  # 5s, 10s, 20s
-                logging.warning(
-                    f"Indexer: embedding rate limit (attempt {attempt + 1}/3), waiting {delay}s"
-                )
-                time.sleep(delay)
-            else:
-                logging.error(f"Indexer: embedding error: {e}")
-                return None
-
-    # All retries exhausted → pause 60s, one final attempt
-    logging.warning(f"Indexer: embedding retries exhausted, pausing {RATE_LIMIT_PAUSE_SECS}s")
-    time.sleep(RATE_LIMIT_PAUSE_SECS)
+    """Embed a batch of texts locally via fastembed. No external API, no rate limit."""
+    from .embedder import embed_texts
     try:
-        result = client.models.embed_content(
-            model=EMBEDDING_MODEL,
-            contents=texts,
-            config=gtypes.EmbedContentConfig(output_dimensionality=EMBEDDING_DIM),
-        )
-        return [list(e.values) for e in result.embeddings]
+        return embed_texts(texts)
     except Exception as e:
-        logging.error(f"Indexer: embedding failed after 60s pause: {e}")
+        logging.error(f"Indexer: embedding error: {e}")
         return None
 
 
@@ -503,6 +459,7 @@ def run_indexing_pipeline(repo_id: int, repo_url: str) -> None:
         logging.info(
             f"Indexer: {owner}/{repo_name} — {len(files)} files → {len(chunks)} chunks"
         )
+        _update_status(db, repo_id, 'indexing', total_chunks=len(chunks), chunk_count=0)
 
         # Upsert: remove old chunks in case this is a re-index
         _delete_existing_chunks(db, repo_id)
@@ -518,14 +475,6 @@ def run_indexing_pipeline(repo_id: int, repo_url: str) -> None:
             if truncation_note:
                 row.error_message = truncation_note
             db.commit()
-
-        # Auto-trigger repo analyst to build story for animation pipeline
-        import threading as _threading
-        from .repo_analyst import run_repo_analysis as _run_repo_analysis
-        _threading.Thread(
-            target=_run_repo_analysis, args=(repo_id,), daemon=True
-        ).start()
-        logging.info("Indexer: launched analyst for repo_id=%s", repo_id)
 
         logging.info(
             f"Indexer: {owner}/{repo_name} ready — "

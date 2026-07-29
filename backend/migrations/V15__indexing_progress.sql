@@ -1,0 +1,1 @@
+ALTER TABLE indexed_repos ADD COLUMN IF NOT EXISTS total_chunks INTEGER;

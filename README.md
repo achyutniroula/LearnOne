@@ -1,9 +1,9 @@
 <p align="center">
-  <b style="font-size:2rem;">LEON</b>
+  <b style="font-size:2rem;">LearnOne</b>
 </p>
 
 <p align="center">
-  Jarvis-style voice AI and adaptive learning platform — talk to it, learn from it
+  A public, text-only, book-style GitHub repo explainer — paste a repo URL, get a clear explanation of how it works
 </p>
 
 <p align="center">
@@ -23,18 +23,17 @@
 
 ## 📖 Overview
 
-**LEON** is a voice-first AI learning assistant. You talk — it listens, reasons, and responds with voice. Under the hood it runs a full adaptive learning engine: structured curricula, spaced-repetition reviews, quizzes, and a knowledge graph that tracks what you know.
+**LearnOne** is a public, no-login, text-only tool that turns any GitHub repository into a book-style explainer. Paste a repo URL, pick a tone (Noobie or Normal), and get four generated chapters: Preface, Contents, Pipeline, and In-Depth — each with optional diagrams.
 
-The voice layer uses the **Gemini Live API** — a real-time bidirectional audio WebSocket with barge-in interruption, session resumption across 10-minute connection windows, and context window compression so sessions can run indefinitely. A thinker service (fallback chain of Gemini and Groq models) handles complex reasoning and RAG lookups over the repo knowledge base.
+Under the hood: the repo is fetched, chunked, and embedded into pgvector; a RAG retrieval step pulls relevant chunks per section; a thinker service (fallback chain of Gemini and Groq models) generates and validates the JSON content and diagram specs, cached per (repo, mode, section) so nothing is regenerated needlessly.
 
 ### Highlights
 
-- **Real-time voice** — Gemini Live WebSocket with barge-in, VAD, and PCM audio streaming at 16kHz in / 24kHz out
-- **Session persistence** — GoAway reconnect with resumption handles; context window compression prevents the 15-min session cap
+- **Repo indexing** — GitHub repos fetched, chunked, and embedded into pgvector (`gemini-embedding-001`, 768-dim)
 - **Fallback reasoning chain** — `gemini-2.5-flash` → `gemini-2.5-flash-lite` → Groq models; per-model Redis cooldowns on 429
-- **Repo RAG** — LearnOne codebase chunked and ingested into pgvector (`gemini-embedding-001`, 768-dim); retrieved at query time inside the thinker
-- **Adaptive learning engine** — SM-2 spaced repetition, knowledge graph extraction, mastery tracking with EMA scoring
-- **Animated orb UI** — state-driven glass sphere: idle (breathing) → listening (ripple rings) → thinking (orbiting particle) → speaking (waveform)
+- **Book-style explainer** — Preface / Contents / Pipeline / In-Depth sections, generated once and cached per repo + mode
+- **Diagrams** — validated diagram specs (flow / hierarchy / sequence) rendered via Mermaid
+- **No auth** — fully public, no login required
 
 ---
 

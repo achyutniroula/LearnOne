@@ -1,31 +1,8 @@
 import logging
-from google import genai
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from ..config import settings
-from ..llm_registry import EMBEDDING_MODEL, RAG_TOP_K
-
-_gemini_client: genai.Client | None = None
-
-
-def _get_gemini_client() -> genai.Client:
-    global _gemini_client
-    if _gemini_client is None:
-        _gemini_client = genai.Client(api_key=settings.gemini_api_key or None)
-    return _gemini_client
-
-
-def embed_text(text_to_embed: str) -> list[float]:
-    """Embed a string using the Gemini embedding model. Returns a float list."""
-    from google.genai import types as gtypes
-    from ..llm_registry import EMBEDDING_DIM
-    client = _get_gemini_client()
-    result = client.models.embed_content(
-        model=EMBEDDING_MODEL,
-        contents=text_to_embed,
-        config=gtypes.EmbedContentConfig(output_dimensionality=EMBEDDING_DIM),
-    )
-    return result.embeddings[0].values
+from ..llm_registry import RAG_TOP_K
+from .embedder import embed_text
 
 
 def retrieve_context(

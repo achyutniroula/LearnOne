@@ -262,21 +262,6 @@
   100% { background-position:  200% 0; }
 }
 
-.orb-blue {
-  position: fixed; top: -15%; right: -10%;
-  width: 55vw; height: 55vw;
-  background: rgba(198,198,200,0.03);
-  border-radius: 50%; filter: blur(120px);
-  pointer-events: none; z-index: 0;
-}
-.orb-purple {
-  position: fixed; bottom: -10%; left: 15%;
-  width: 35vw; height: 35vw;
-  background: rgba(37,38,40,0.06);
-  border-radius: 50%; filter: blur(100px);
-  pointer-events: none; z-index: 0;
-}
-
 @keyframes typing-dot {
   0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
   40%           { opacity: 1;   transform: scale(1); }
@@ -290,21 +275,3 @@
 }
 .typing-dot:nth-child(2) { animation-delay: 0.2s; }
 .typing-dot:nth-child(3) { animation-delay: 0.4s; }
-
-/* LEON orb animations */
-@keyframes leon-breathe {
-  0%, 100% { opacity: 0.7; transform: scale(1); }
-  50%       { opacity: 1;   transform: scale(1.04); }
-}
-@keyframes leon-ripple {
-  0%   { transform: scale(0.8); opacity: 0.8; }
-  100% { transform: scale(2.2); opacity: 0;   }
-}
-@keyframes leon-orbit {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
-@keyframes leon-waveform {
-  0%, 100% { transform: scaleY(0.4); }
-  50%       { transform: scaleY(1.2); }
-}

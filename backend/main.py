@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from app.routers import auth, sessions, chat, memory, quiz, review, progress, code, user, leon, voice, repos, animation
+from app.routers import repos, explain
 
 app = FastAPI(title="LearnOne API")
 
@@ -21,20 +21,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router)
-app.include_router(sessions.router)
-app.include_router(chat.router)
-app.include_router(memory.router)
-app.include_router(quiz.router)
-app.include_router(review.router)
-app.include_router(progress.router)
-app.include_router(code.router)
-app.include_router(user.router)
-app.include_router(leon.router)
-app.include_router(voice.router)
-app.include_router(voice.diag_router)
 app.include_router(repos.router)
-app.include_router(animation.router)
+app.include_router(explain.router)
 
 
 @app.get("/actuator/health")
